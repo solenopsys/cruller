@@ -6,6 +6,10 @@ pub fn io() std.Io {
     return std.Options.debug_io;
 }
 
+pub fn fchdir(fd: std.posix.fd_t) !void {
+    if (std.c.fchdir(fd) != 0) return error.Unexpected;
+}
+
 pub fn nanosleep(secs: u64, nanos: u64) void {
     var ts: std.c.timespec = .{ .sec = @intCast(secs), .nsec = @intCast(nanos) };
     _ = std.c.nanosleep(&ts, null);
@@ -74,6 +78,9 @@ pub fn ArrayHashMapManaged(comptime K: type, comptime V: type, comptime Context:
         pub fn init(allocator: std.mem.Allocator) Self {
             return .{ .allocator = allocator };
         }
+        pub fn initContext(allocator: std.mem.Allocator, _: Context) Self {
+            return .{ .allocator = allocator };
+        }
         pub fn deinit(self: *Self) void {
             self.unmanaged.deinit(self.allocator);
         }
@@ -85,6 +92,9 @@ pub fn ArrayHashMapManaged(comptime K: type, comptime V: type, comptime Context:
         }
         pub fn getPtr(self: Self, key: anytype) ?*V {
             return self.unmanaged.getPtr(key);
+        }
+        pub fn getEntry(self: Self, key: anytype) ?Entry {
+            return self.unmanaged.getEntry(key);
         }
         pub fn getIndex(self: Self, key: anytype) ?usize {
             return self.unmanaged.getIndex(key);
@@ -177,6 +187,9 @@ pub fn AutoArrayHashMapManaged(comptime K: type, comptime V: type) type {
         }
         pub fn fetchSwapRemove(self: *Self, key: K) ?Unmanaged.KV {
             return self.unmanaged.fetchSwapRemove(key);
+        }
+        pub fn orderedRemove(self: *Self, key: K) bool {
+            return self.unmanaged.orderedRemove(key);
         }
         pub fn iterator(self: *const Self) Iterator {
             return self.unmanaged.iterator();
@@ -397,7 +410,7 @@ pub fn GenericReader(
         }
         pub fn readEnum(self: Self, comptime E: type, comptime endian: std.builtin.Endian) (NoEofError || error{InvalidValue})!E {
             const tag = try self.readInt(@typeInfo(E).@"enum".tag_type, endian);
-            return std.meta.intToEnum(E, tag) catch error.InvalidValue;
+            return std.enums.fromInt(E, tag) orelse error.InvalidValue;
         }
         pub fn skipBytes(self: Self, n: u64, _: anytype) NoEofError!void {
             var i: u64 = 0;
@@ -458,6 +471,9 @@ pub fn FixedBufferStream(comptime BufferPtr: type) type {
         }
         pub fn writer(self: *Self) Writer {
             return .{ .context = self };
+        }
+        pub fn write(self: *Self, bytes: []const u8) WriteError!usize {
+            return writeFn(self, bytes);
         }
         fn readFn(self: *Self, dest: []u8) ReadError!usize {
             const n = @min(dest.len, self.buffer.len - self.pos);

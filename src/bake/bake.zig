@@ -119,7 +119,7 @@ pub const UserOptions = struct {
 pub const StringRefList = struct {
     strings: std.ArrayListUnmanaged(ZigString.Slice),
 
-    pub const empty: StringRefList = .{ .strings = .{} };
+    pub const empty: StringRefList = .{ .strings = .empty };
 
     pub fn track(al: *StringRefList, str: ZigString.Slice) []const u8 {
         bun.handleOom(al.strings.append(bun.default_allocator, str));

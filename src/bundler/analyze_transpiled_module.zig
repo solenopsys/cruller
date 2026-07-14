@@ -173,7 +173,7 @@ pub const ModuleInfo = struct {
     strings_map: std.ArrayHashMapUnmanaged(StringMapKey, void, void, true),
     strings_buf: std.ArrayListUnmanaged(u8),
     strings_lens: std.ArrayListUnmanaged(u32),
-    requested_modules: std.AutoArrayHashMap(StringID, FetchParameters),
+    requested_modules: bun.compat.AutoArrayHashMapManaged(StringID, FetchParameters),
     buffer: std.ArrayListUnmanaged(StringID),
     record_kinds: std.ArrayListUnmanaged(RecordKind),
     flags: Flags,
@@ -255,7 +255,7 @@ pub const ModuleInfo = struct {
         return .{
             .gpa = allocator,
             .strings_map = .{},
-            .strings_buf = .{},
+            .strings_buf = .empty,
             .strings_lens = .{},
             .exported_names = .{},
             .requested_modules = std.AutoArrayHashMap(StringID, FetchParameters).init(allocator),

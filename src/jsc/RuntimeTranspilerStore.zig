@@ -17,7 +17,7 @@ pub fn dumpSourceStringFailiable(vm: *VirtualMachine, specifier: string, written
     if (bun.feature_flag.BUN_DEBUG_NO_DUMP.get()) return;
 
     const BunDebugHolder = struct {
-        pub var dir: ?std.fs.Dir = null;
+        pub var dir: ?std.Io.Dir = null;
         pub var lock: bun.Mutex = .{};
     };
 

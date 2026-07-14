@@ -2875,9 +2875,10 @@ pub const Resolver = struct {
                 const sentinel = path.ptr[0..queue_top.unsafe_path.len :0];
 
                 const open_req = if (comptime Environment.isPosix) open_req: {
-                    const dir_result = std.fs.openDirAbsoluteZ(
+                    const dir_result = std.Io.Dir.openDirAbsolute(
+                        bun.compat.io(),
                         sentinel,
-                        .{ .no_follow = !follow_symlinks, .iterate = true },
+                        .{ .follow_symlinks = follow_symlinks, .iterate = true },
                     ) catch |err| break :open_req err;
                     break :open_req FD.fromStdDir(dir_result);
                 } else if (comptime Environment.isWindows) open_req: {

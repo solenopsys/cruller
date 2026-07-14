@@ -700,8 +700,8 @@ pub const SendQueue = struct {
             if (warning.transferToJS(global)) |warning_js| {
                 if (warning_name.transferToJS(global)) |warning_name_js| {
                     global.emitWarning(warning_js, warning_name_js, .js_undefined, .js_undefined) catch {};
-                } else {}
-            } else {}
+                } else |_| {}
+            } else |_| {}
             // (fall through to success code in order to consume the message and continue sending)
         }
         // consume the message and continue sending

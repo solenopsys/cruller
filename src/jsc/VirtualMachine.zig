@@ -53,7 +53,8 @@ cpu_profiler_config: ?CPUProfilerConfig = null,
 heap_profiler_config: ?HeapProfilerConfig = null,
 counters: Counters = .{},
 
-hot_reload: bun.cli.Command.HotReload = .none,
+// bzrt: cli вырезан, но enum HotReload жив в options_types/Context.zig
+hot_reload: @import("../options_types/Context.zig").HotReload = .none,
 jsc_vm: *VM = undefined,
 
 /// hide bun:wrap from stack traces
@@ -86,7 +87,7 @@ resolved_count: usize = 0,
 had_errors: bool = false,
 
 macros: MacroMap,
-macro_entry_points: std.AutoArrayHashMap(i32, *MacroEntryPoint),
+macro_entry_points: bun.compat.AutoArrayHashMapManaged(i32, *MacroEntryPoint),
 macro_mode: bool = false,
 no_macros: bool = false,
 auto_killer: ProcessAutoKiller = .{ .enabled = false },
@@ -1048,7 +1049,7 @@ pub fn waitForTasks(this: *VirtualMachine) void {
     }
 }
 
-pub const MacroMap = std.AutoArrayHashMap(i32, jsc.C.JSObjectRef);
+pub const MacroMap = bun.compat.AutoArrayHashMapManaged(i32, jsc.C.JSObjectRef);
 
 pub fn enableMacroMode(this: *VirtualMachine) void {
     jsc.markBinding(@src());

@@ -1264,18 +1264,27 @@ var needs_proc_self_workaround: bool = false;
 // necessary on linux because other platforms don't have an optional
 // /proc/self/fd
 fn getFdPathViaCWD(fd: std.posix.fd_t, buf: *bun.PathBuffer) ![]u8 {
-    const prev_fd = try std.posix.openatZ(std.fs.cwd().fd, ".", .{ .DIRECTORY = true }, 0);
+    const prev_fd = try std.posix.openatZ(std.posix.AT.FDCWD, ".", .{ .DIRECTORY = true }, 0);
     var needs_chdir = false;
     defer {
-        if (needs_chdir) std.posix.fchdir(prev_fd) catch unreachable;
+        if (needs_chdir) bun.compat.fchdir(prev_fd) catch unreachable;
         std.posix.close(prev_fd);
     }
-    try std.posix.fchdir(fd);
+    try bun.compat.fchdir(fd);
     needs_chdir = true;
-    return std.posix.getcwd(buf);
+    return getcwd(buf);
 }
 
-pub const getcwd = std.posix.getcwd;
+/// zig 0.16: `std.posix.getcwd` удалён; линуксовый raw-syscall возвращает длину
+/// (включая нуль-терминатор) или отрицательный errno.
+pub fn getcwd(out_buffer: []u8) ![]u8 {
+    const rc = std.os.linux.getcwd(out_buffer.ptr, out_buffer.len);
+    const signed: isize = @bitCast(rc);
+    if (signed < 0) return error.Unexpected;
+    const path_len: usize = @intCast(signed);
+    if (path_len == 0) return out_buffer[0..0];
+    return out_buffer[0 .. path_len - 1];
+}
 
 pub fn getcwdAlloc(allocator: std.mem.Allocator) ![:0]u8 {
     var temp: PathBuffer = undefined;
@@ -1313,14 +1322,7 @@ pub fn getFdPath(fd: FD, buf: *bun.PathBuffer) ![]u8 {
         return getFdPathViaCWD(fd.native(), buf);
     }
 
-    return std.os.getFdPath(fd.native(), buf) catch |err| {
-        if (err == error.FileNotFound and !needs_proc_self_workaround) {
-            needs_proc_self_workaround = true;
-            return getFdPathViaCWD(fd.native(), buf);
-        }
-
-        return err;
-    };
+    return sys.getFdPath(fd, buf).unwrap();
 }
 
 /// TODO: move to bun.sys and add a method onto FD
@@ -1664,16 +1666,13 @@ pub fn reloadProcess(
         }
     } else if (comptime Environment.isPosix) {
         if (comptime Environment.isLinux or Environment.isFreeBSD) on_before_reload_process_linux();
-        const err = std.posix.execveZ(
-            exec_path,
-            newargv,
-            envp,
-        );
+        // zig 0.16: std.posix.execveZ удалён → raw linux.execve (возвращается только при ошибке)
+        _ = std.os.linux.execve(exec_path, newargv, envp);
         if (may_return) {
-            Output.errGeneric("Failed to reload process: {s}", .{@errorName(err)});
+            Output.errGeneric("Failed to reload process", .{});
             return;
         }
-        Output.panic("Unexpected error while reloading: {s}", .{@errorName(err)});
+        Output.panic("Unexpected error while reloading process", .{});
     } else {
         @compileError("unsupported platform for reloadProcess");
     }
@@ -2294,11 +2293,11 @@ pub inline fn serializableInto(comptime T: type, init: anytype) T {
 
 /// Like std.fs.Dir.makePath except instead of infinite looping on dangling
 /// symlink, it deletes the symlink and tries again.
-pub fn makePath(dir: std.fs.Dir, sub_path: []const u8) !void {
+pub fn makePath(dir: std.Io.Dir, sub_path: []const u8) !void {
     var it = try std.fs.path.componentIterator(sub_path);
     var component = it.last() orelse return;
     while (true) {
-        dir.makeDir(component.path) catch |err| switch (err) {
+        dir.createDir(compat.io(), component.path, .default_dir) catch |err| switch (err) {
             error.PathAlreadyExists => {
                 var path_buf2: [MAX_PATH_BYTES * 2]u8 = undefined;
                 copy(u8, &path_buf2, component.path);
@@ -2309,7 +2308,7 @@ pub fn makePath(dir: std.fs.Dir, sub_path: []const u8) !void {
                 const is_dir = S.ISDIR(@intCast(result.mode));
                 // dangling symlink
                 if (!is_dir) {
-                    dir.deleteTree(component.path) catch {};
+                    dir.deleteTree(compat.io(), component.path) catch {};
                     continue;
                 }
             },
@@ -2960,11 +2959,11 @@ pub fn runtimeEmbedFile(
         var once = bun.once(load);
 
         fn load() [:0]const u8 {
-            return std.fs.cwd().readFileAllocOptions(
-                default_allocator,
+            return std.Io.Dir.cwd().readFileAllocOptions(
+                compat.io(),
                 abs_path,
-                std.math.maxInt(usize),
-                null,
+                default_allocator,
+                .unlimited,
                 .fromByteUnits(@alignOf(u8)),
                 '\x00',
             ) catch |e| {

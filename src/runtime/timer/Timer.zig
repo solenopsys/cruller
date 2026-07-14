@@ -68,18 +68,12 @@ pub const All = struct {
 
     fn insertLockHeld(this: *All, timer: *EventLoopTimer) void {
         if (Environment.ci_assert) bun.assert(this.lock.tryLock() == false);
-        if (this.fake_timers.isActive() and timer.tag.allowFakeTimers()) {
-            this.fake_timers.timers.insert(timer);
-            timer.state = .ACTIVE;
-            timer.in_heap = .fake;
-        } else {
-            this.timers.insert(timer);
-            timer.state = .ACTIVE;
-            timer.in_heap = .regular;
+        this.timers.insert(timer);
+        timer.state = .ACTIVE;
+        timer.in_heap = .regular;
 
-            if (Environment.isWindows) {
-                this.ensureUVTimer(@alignCast(@fieldParentPtr("timer", this)));
-            }
+        if (Environment.isWindows) {
+            this.ensureUVTimer(@alignCast(@fieldParentPtr("timer", this)));
         }
     }
 
@@ -93,7 +87,7 @@ pub const All = struct {
         switch (timer.in_heap) {
             .none => if (Environment.ci_assert) bun.assert(false), // can't remove a timer that was not inserted
             .regular => this.timers.remove(timer),
-            .fake => this.fake_timers.timers.remove(timer),
+            .fake => {},
         }
         timer.in_heap = .none;
         timer.state = .CANCELLED;
@@ -700,4 +694,8 @@ const jsc = bun.jsc;
 const JSGlobalObject = jsc.JSGlobalObject;
 const JSValue = jsc.JSValue;
 const VirtualMachine = jsc.VirtualMachine;
-const FakeTimers = bun.jsc.Jest.bun_test.FakeTimers;
+const FakeTimers = struct {
+    pub fn isActive(_: *const FakeTimers) bool {
+        return false;
+    }
+};

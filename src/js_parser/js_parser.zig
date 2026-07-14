@@ -672,7 +672,38 @@ pub const E = @import("./ast/E.zig");
 pub const Expr = @import("./ast/Expr.zig");
 pub const ExprNodeIndex = Expr;
 pub const G = @import("./ast/G.zig");
-// bzrt-cut: pub const Macro = @import("../js_parser_jsc/Macro.zig");
+pub const Macro = struct {
+    pub const namespaceWithColon: string = "macro:";
+
+    pub fn isMacroPath(_: string) bool {
+        return false;
+    }
+
+    pub const MacroContext = struct {
+        javascript_object: bun.jsc.JSValue = .zero,
+
+        pub fn init(_: anytype) MacroContext {
+            return .{};
+        }
+
+        pub fn getRemap(_: MacroContext, _: string) ?@import("../resolver/package_json.zig").MacroImportReplacementMap {
+            return null;
+        }
+
+        pub fn call(
+            _: *MacroContext,
+            _: string,
+            _: string,
+            _: *logger.Log,
+            _: *const logger.Source,
+            _: logger.Range,
+            caller: Expr,
+            _: string,
+        ) !Expr {
+            return caller;
+        }
+    };
+};
 pub const Op = @import("./ast/Op.zig");
 pub const S = @import("./ast/S.zig");
 pub const Scope = @import("./ast/Scope.zig");

@@ -48,7 +48,7 @@ pub fn init(this: *GarbageCollectionController, vm: *VirtualMachine) void {
             if (parsed > 0) {
                 gc_timer_interval = parsed;
             }
-        } else {}
+        } else |_| {}
     }
     this.gc_timer_interval = gc_timer_interval;
 
@@ -57,7 +57,7 @@ pub fn init(this: *GarbageCollectionController, vm: *VirtualMachine) void {
             if (parsed >= 0) {
                 VirtualMachine.Bun__defaultRemainingRunsUntilSkipReleaseAccess = parsed;
             }
-        } else {}
+        } else |_| {}
     }
 
     this.disabled = vm.transpiler.env.has("BUN_GC_TIMER_DISABLE");

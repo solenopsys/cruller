@@ -106,9 +106,7 @@ pub const ProcessExitHandler = struct {
     pub const TaggedPointer = bun.TaggedPointerUnion(
         .{
             Subprocess,
-            LifecycleScriptSubprocess,
-            ShellSubprocess,
-            SecurityScanSubprocess,
+            // bzrt-cut: LifecycleScriptSubprocess, SecurityScanSubprocess (install), ShellSubprocess (shell)
             WebViewHostProcess,
             ChromeProcess,
             SyncProcess,
@@ -131,21 +129,8 @@ pub const ProcessExitHandler = struct {
                 const subprocess = this.ptr.as(Subprocess);
                 subprocess.onProcessExit(process, status, rusage);
             },
-            @field(TaggedPointer.Tag, @typeName(LifecycleScriptSubprocess)) => {
-                const subprocess = this.ptr.as(LifecycleScriptSubprocess);
-                subprocess.onProcessExit(process, status, rusage);
-            },
-            // bzrt: ProcessHandle (multi-run cli) вырезан
-            // bzrt: MultiRunProcessHandle (cli) вырезан
-            // bzrt: TestWorkerHandle (test_runner) вырезан
-            @field(TaggedPointer.Tag, @typeName(ShellSubprocess)) => {
-                const subprocess = this.ptr.as(ShellSubprocess);
-                subprocess.onProcessExit(process, status, rusage);
-            },
-            @field(TaggedPointer.Tag, @typeName(SecurityScanSubprocess)) => {
-                const subprocess = this.ptr.as(SecurityScanSubprocess);
-                subprocess.onProcessExit(process, status, rusage);
-            },
+            // bzrt-cut: ProcessHandle/MultiRunProcessHandle (cli), TestWorkerHandle (test_runner),
+            // LifecycleScriptSubprocess/SecurityScanSubprocess (install), ShellSubprocess (shell)
             @field(TaggedPointer.Tag, @typeName(WebViewHostProcess)) => {
                 const subprocess = this.ptr.as(WebViewHostProcess);
                 subprocess.onProcessExit(process, status, rusage);
@@ -565,7 +550,7 @@ pub const Process = struct {
         if (comptime Environment.isPosix) {
             switch (this.poller) {
                 .waiter_thread, .fd => {
-                    const err = std.c.kill(this.pid, signal);
+                    const err = std.c.kill(this.pid, @enumFromInt(signal));
                     if (err != 0) {
                         const errno_ = bun.sys.getErrno(err);
 
@@ -634,7 +619,7 @@ pub const Status = union(enum) {
                 }
 
                 if (std.posix.W.IFSIGNALED(result.status)) {
-                    signal = @as(u8, @truncate(std.posix.W.TERMSIG(result.status)));
+                    signal = @as(u8, @truncate(@intFromEnum(std.posix.W.TERMSIG(result.status))));
                 }
 
                 // https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/waitpid.2.html
@@ -643,7 +628,7 @@ pub const Status = union(enum) {
                 // ified the WUNTRACED option or if the child process is being
                 // traced (see ptrace(2)).
                 else if (std.posix.W.IFSTOPPED(result.status)) {
-                    signal = @as(u8, @truncate(std.posix.W.STOPSIG(result.status)));
+                    signal = @as(u8, @truncate(@intFromEnum(std.posix.W.STOPSIG(result.status))));
                 }
             },
         }
@@ -958,7 +943,8 @@ const WaiterThreadPosix = struct {
 
         if (comptime Environment.isLinux) {
             const one = @as([8]u8, @bitCast(@as(usize, 1)));
-            _ = std.posix.write(instance.eventfd.cast(), &one) catch @panic("Failed to write to eventfd");
+            // zig 0.16: std.posix.write удалён → raw linux.write
+            _ = std.os.linux.write(instance.eventfd.cast(), &one, one.len);
         }
     }
 
@@ -975,14 +961,18 @@ const WaiterThreadPosix = struct {
 
         if (comptime Environment.isLinux) {
             const linux = std.os.linux;
-            instance.eventfd = .fromNative(try std.posix.eventfd(0, linux.EFD.NONBLOCK | linux.EFD.CLOEXEC | 0));
+            // zig 0.16: std.posix.eventfd удалён → raw linux.eventfd (usize + errno)
+            const efd = linux.eventfd(0, linux.EFD.NONBLOCK | linux.EFD.CLOEXEC | 0);
+            if (@as(isize, @bitCast(efd)) < 0) return error.SystemResources;
+            instance.eventfd = .fromNative(@intCast(efd));
         }
 
         var thread = try std.Thread.spawn(.{ .stack_size = stack_size }, loop, .{});
         thread.detach();
     }
 
-    fn wakeup(_: c_int) callconv(.c) void {
+    // zig 0.16: posix.Sigaction handler принимает SIG-enum, не c_int
+    fn wakeup(_: std.posix.SIG) callconv(.c) void {
         const one = @as([8]u8, @bitCast(@as(usize, 1)));
         _ = bun.sys.write(instance.eventfd, &one).unwrap() catch 0;
     }
@@ -994,13 +984,13 @@ const WaiterThreadPosix = struct {
 
         if (comptime Environment.isLinux) {
             var current_mask = bun.sys.sigemptyset();
-            bun.sys.sigaddset(&current_mask, std.posix.SIG.CHLD);
+            bun.sys.sigaddset(&current_mask, @intFromEnum(std.posix.SIG.CHLD));
             const act = bun.sys.Sigaction{
                 .handler = .{ .handler = &wakeup },
                 .mask = current_mask,
                 .flags = std.posix.SA.NOCLDSTOP,
             };
-            bun.sys.sigaction(std.posix.SIG.CHLD, &act, null);
+            bun.sys.sigaction(@intFromEnum(std.posix.SIG.CHLD), &act, null);
         }
     }
 
@@ -1389,7 +1379,7 @@ pub fn spawnProcessPosix(
         attr.linux_pdeathsig = if (options.linux_pdeathsig) |sig|
             @intCast(sig)
         else if (bun.ParentDeathWatchdog.shouldDefaultSpawnPdeathsig())
-            std.posix.SIG.KILL
+            @intCast(@intFromEnum(std.posix.SIG.KILL))
         else
             0;
     }
@@ -2934,8 +2924,7 @@ const uv = bun.windows.libuv;
 const ChromeProcess = bun.api.ChromeProcess;
 const WebViewHostProcess = bun.api.WebViewHostProcess;
 
-const LifecycleScriptSubprocess = bun.install.LifecycleScriptSubprocess;
-const SecurityScanSubprocess = bun.install.SecurityScanSubprocess;
+// bzrt-cut: LifecycleScriptSubprocess, SecurityScanSubprocess (install вырезан)
 
 const jsc = bun.jsc;
 const Subprocess = jsc.Subprocess;

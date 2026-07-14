@@ -10,8 +10,7 @@ pub const Task = TaggedPointerUnion(.{
     AsyncImageTask,
     AsyncTransformTask,
     bun.bake.DevServer.HotReloadEvent,
-    bun.bundle_v2.DeferredBatchTask,
-    shell.Interpreter.Builtin.Yes.YesTask,
+    // bzrt-cut: bundle_v2.DeferredBatchTask, shell.*.YesTask (bundler/shell вырезаны)
     Chmod,
     Chown,
     Close,
@@ -40,8 +39,7 @@ pub const Task = TaggedPointerUnion(.{
     ManagedTask,
     Mkdir,
     Mkdtemp,
-    napi_async_work,
-    NapiFinalizerTask,
+    // bzrt-cut: napi_async_work, NapiFinalizerTask (napi вырезан)
     NativePromiseContextDeferredDerefTask,
     NativeBrotli,
     NativeZlib,
@@ -67,26 +65,12 @@ pub const Task = TaggedPointerUnion(.{
     S3HttpDownloadStreamingTask,
     S3HttpSimpleTask,
     ServerAllConnectionsClosedTask,
-    ShellAsync,
-    ShellAsyncSubprocessDone,
-    ShellCondExprStatTask,
-    ShellCpTask,
-    ShellGlobTask,
-    ShellIOReaderAsyncDeinit,
-    ShellIOWriterAsyncDeinit,
-    ShellIOWriter,
-    ShellLsTask,
-    ShellMkdirTask,
-    ShellMvBatchedTask,
-    ShellMvCheckTargetTask,
-    ShellRmDirTask,
-    ShellRmTask,
-    ShellTouchTask,
+    // bzrt-cut: Shell*Task (shell вырезан)
     Stat,
     StatFS,
     StreamPending,
     Symlink,
-    ThreadSafeFunction,
+    // bzrt-cut: ThreadSafeFunction (napi вырезан)
     TimeoutObject,
     Truncate,
     Unlink,
@@ -136,68 +120,7 @@ pub fn tickQueueWithCount(this: *EventLoop, virtual_machine: *VirtualMachine, co
         log("run {s}", .{@tagName(task.tag())});
         defer counter.* += 1;
         switch (task.tag()) {
-            // bzrt-cut: Archive*Task (libarchive вырезан)
-            @field(Task.Tag, @typeName(ShellAsync)) => {
-                var shell_ls_task: *ShellAsync = task.get(ShellAsync).?;
-                shell_ls_task.runFromMainThread();
-            },
-            @field(Task.Tag, @typeName(ShellAsyncSubprocessDone)) => {
-                var shell_ls_task: *ShellAsyncSubprocessDone = task.get(ShellAsyncSubprocessDone).?;
-                shell_ls_task.runFromMainThread();
-            },
-            @field(Task.Tag, @typeName(ShellIOWriterAsyncDeinit)) => {
-                var shell_ls_task: *ShellIOWriterAsyncDeinit = task.get(ShellIOWriterAsyncDeinit).?;
-                shell_ls_task.runFromMainThread();
-            },
-            @field(Task.Tag, @typeName(ShellIOWriter)) => {
-                var shell_io_writer: *ShellIOWriter = task.get(ShellIOWriter).?;
-                shell_io_writer.runFromMainThread();
-            },
-            @field(Task.Tag, @typeName(ShellIOReaderAsyncDeinit)) => {
-                var shell_ls_task: *ShellIOReaderAsyncDeinit = task.get(ShellIOReaderAsyncDeinit).?;
-                shell_ls_task.runFromMainThread();
-            },
-            @field(Task.Tag, @typeName(ShellCondExprStatTask)) => {
-                var shell_ls_task: *ShellCondExprStatTask = task.get(ShellCondExprStatTask).?;
-                shell_ls_task.task.runFromMainThread();
-            },
-            @field(Task.Tag, @typeName(ShellCpTask)) => {
-                var shell_ls_task: *ShellCpTask = task.get(ShellCpTask).?;
-                shell_ls_task.runFromMainThread();
-            },
-            @field(Task.Tag, @typeName(ShellTouchTask)) => {
-                var shell_ls_task: *ShellTouchTask = task.get(ShellTouchTask).?;
-                shell_ls_task.runFromMainThread();
-            },
-            @field(Task.Tag, @typeName(ShellMkdirTask)) => {
-                var shell_ls_task: *ShellMkdirTask = task.get(ShellMkdirTask).?;
-                shell_ls_task.runFromMainThread();
-            },
-            @field(Task.Tag, @typeName(ShellLsTask)) => {
-                var shell_ls_task: *ShellLsTask = task.get(ShellLsTask).?;
-                shell_ls_task.runFromMainThread();
-            },
-            @field(Task.Tag, @typeName(ShellMvBatchedTask)) => {
-                var shell_mv_batched_task: *ShellMvBatchedTask = task.get(ShellMvBatchedTask).?;
-                shell_mv_batched_task.task.runFromMainThread();
-            },
-            @field(Task.Tag, @typeName(ShellMvCheckTargetTask)) => {
-                var shell_mv_check_target_task: *ShellMvCheckTargetTask = task.get(ShellMvCheckTargetTask).?;
-                shell_mv_check_target_task.task.runFromMainThread();
-            },
-            @field(Task.Tag, @typeName(ShellRmTask)) => {
-                var shell_rm_task: *ShellRmTask = task.get(ShellRmTask).?;
-                shell_rm_task.runFromMainThread();
-            },
-            @field(Task.Tag, @typeName(ShellRmDirTask)) => {
-                var shell_rm_task: *ShellRmDirTask = task.get(ShellRmDirTask).?;
-                shell_rm_task.runFromMainThread();
-            },
-            @field(Task.Tag, @typeName(ShellGlobTask)) => {
-                var shell_glob_task: *ShellGlobTask = task.get(ShellGlobTask).?;
-                shell_glob_task.runFromMainThread();
-                shell_glob_task.deinit();
-            },
+            // bzrt-cut: Archive*Task (libarchive вырезан), Shell*Task (shell вырезан)
             @field(Task.Tag, @typeName(FetchTasklet)) => {
                 var fetch_task: *Fetch.FetchTasklet = task.get(Fetch.FetchTasklet).?;
                 try fetch_task.onProgressUpdate();
@@ -230,14 +153,7 @@ pub fn tickQueueWithCount(this: *EventLoop, virtual_machine: *VirtualMachine, co
                 defer transform_task.deinit();
                 try transform_task.runFromJS();
             },
-            @field(Task.Tag, @typeName(bun.api.napi.napi_async_work)) => {
-                const transform_task: *bun.api.napi.napi_async_work = task.get(bun.api.napi.napi_async_work).?;
-                transform_task.runFromJS(virtual_machine, global);
-            },
-            @field(Task.Tag, @typeName(ThreadSafeFunction)) => {
-                var transform_task: *ThreadSafeFunction = task.as(ThreadSafeFunction);
-                transform_task.onDispatch();
-            },
+            // bzrt-cut: napi_async_work, ThreadSafeFunction (napi вырезан)
             @field(Task.Tag, @typeName(ReadFileTask)) => {
                 var transform_task: *ReadFileTask = task.get(ReadFileTask).?;
                 defer transform_task.deinit();
@@ -481,17 +397,11 @@ pub fn tickQueueWithCount(this: *EventLoop, virtual_machine: *VirtualMachine, co
                 var any: *ServerAllConnectionsClosedTask = task.get(ServerAllConnectionsClosedTask).?;
                 try any.runFromJSThread(virtual_machine);
             },
-            @field(Task.Tag, @typeName(bun.bundle_v2.DeferredBatchTask)) => {
-                var any: *bun.bundle_v2.DeferredBatchTask = task.get(bun.bundle_v2.DeferredBatchTask).?;
-                any.runOnJSThread();
-            },
+            // bzrt-cut: bundle_v2.DeferredBatchTask (bundler вырезан)
             @field(Task.Tag, @typeName(PosixSignalTask)) => {
                 PosixSignalTask.runFromJSThread(@intCast(task.asUintptr()), global);
             },
-            @field(Task.Tag, @typeName(NapiFinalizerTask)) => {
-                var any: *NapiFinalizerTask = task.get(NapiFinalizerTask).?;
-                any.runOnJSThread();
-            },
+            // bzrt-cut: NapiFinalizerTask (napi вырезан)
             @field(Task.Tag, @typeName(NativePromiseContextDeferredDerefTask)) => {
                 NativePromiseContextDeferredDerefTask.runFromJSThread(@intCast(task.asUintptr()));
             },
@@ -565,9 +475,7 @@ const S3 = bun.S3;
 const S3HttpDownloadStreamingTask = S3.S3HttpDownloadStreamingTask;
 const S3HttpSimpleTask = S3.S3HttpSimpleTask;
 
-const NapiFinalizerTask = bun.api.napi.NapiFinalizerTask;
-const ThreadSafeFunction = bun.api.napi.ThreadSafeFunction;
-const napi_async_work = bun.api.napi.napi_async_work;
+// bzrt-cut: napi aliases (napi вырезан)
 
 const AsyncFS = bun.api.node.fs.Async;
 const Access = AsyncFS.access;

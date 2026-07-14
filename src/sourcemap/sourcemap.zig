@@ -189,7 +189,7 @@ pub fn parseJSON(
                     var names_list = try std.ArrayListUnmanaged(bun.Semver.String).initCapacity(alloc, names.data.e_array.items.len);
                     errdefer names_list.deinit(alloc);
 
-                    var names_buffer = std.ArrayListUnmanaged(u8){};
+                    var names_buffer = std.ArrayListUnmanaged(u8).empty;
                     errdefer names_buffer.deinit(alloc);
 
                     for (names.data.e_array.items.slice()) |*item| {
@@ -435,7 +435,7 @@ pub fn getSourceMapImpl(
             @memcpy(load_path_buf[source_filename.len..][0..4], ".map");
 
             const load_path = load_path_buf[0 .. source_filename.len + 4];
-            const data = switch (bun.sys.File.readFrom(std.fs.cwd(), load_path, allocator)) {
+            const data = switch (bun.sys.File.readFrom(bun.FD.cwd(), load_path, allocator)) {
                 .err => break :try_external,
                 .result => |data| data,
             };

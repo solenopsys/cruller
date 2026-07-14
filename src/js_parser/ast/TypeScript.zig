@@ -464,9 +464,8 @@ const strings = bun.strings;
 const js_lexer = bun.js_lexer;
 const T = js_lexer.T;
 
-const js_parser = bun.js_parser;
-const Ref = js_parser.Ref;
-const TypeScript = js_parser.TypeScript;
+const Ref = @import("./base.zig").Ref;
+const TypeScript = @This();
 
 const std = @import("std");
 const List = std.ArrayListUnmanaged;

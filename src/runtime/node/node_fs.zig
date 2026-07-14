@@ -443,10 +443,11 @@ pub const Async = struct {
 };
 
 pub const AsyncCpTask = NewAsyncCpTask(false);
-pub const ShellAsyncCpTask = NewAsyncCpTask(true);
+// bzrt-cut: ShellAsyncCpTask = NewAsyncCpTask(true) (shell вырезан)
 
 pub fn NewAsyncCpTask(comptime is_shell: bool) type {
-    const ShellTask = bun.shell.Interpreter.Builtin.Cp.ShellCpTask;
+    // bzrt: shell вырезан — тип ленивый, реально инстанцируется только is_shell=false
+    const ShellTask = if (is_shell) bun.shell.Interpreter.Builtin.Cp.ShellCpTask else u0;
     const ShellTaskT = if (is_shell) *ShellTask else u0;
     return struct {
         promise: jsc.JSPromise.Strong = .{},
@@ -779,7 +780,7 @@ pub fn NewAsyncCpTask(comptime is_shell: bool) type {
                     },
                 };
 
-                if (!bun.S.ISDIR(stat_.mode)) {
+                if (!bun.S.ISDIR(@intCast(stat_.mode))) {
                     // This is the only file, there is no point in dispatching subtasks
                     const r = nodefs._copySingleFileSync(
                         src,
@@ -3758,7 +3759,7 @@ pub const NodeFS = struct {
             }
 
             // If we know it's a regular file and ioctl_ficlone is available, attempt to use it.
-            if (posix.S.ISREG(stat_.mode) and bun.can_use_ioctl_ficlone()) {
+            if (posix.S.ISREG(@intCast(stat_.mode)) and bun.can_use_ioctl_ficlone()) {
                 const rc = bun.linux.ioctl_ficlone(dest_fd, src_fd);
                 if (rc == 0) {
                     _ = Syscall.fchmod(dest_fd, @intCast(stat_.mode));
@@ -3773,7 +3774,7 @@ pub const NodeFS = struct {
 
             defer {
                 _ = linux.ftruncate(dest_fd.cast(), @as(i64, @intCast(@as(u63, @truncate(wrote)))));
-                _ = linux.fchmod(dest_fd.cast(), stat_.mode);
+                _ = linux.fchmod(dest_fd.cast(), @intCast(stat_.mode));
                 dest_fd.close();
             }
 
@@ -5868,11 +5869,7 @@ pub const NodeFS = struct {
 
     pub fn stat(this: *NodeFS, args: Arguments.Stat, _: Flavor) Maybe(Return.Stat) {
         const path = args.path.sliceZ(&this.sync_error_buf);
-        if (bun.StandaloneModuleGraph.get()) |graph| {
-            if (graph.stat(path)) |*result| {
-                return .{ .result = .{ .stats = .init(&Syscall.PosixStat.init(result), args.big_int) } };
-            }
-        }
+        // bzrt-cut: StandaloneModuleGraph.stat (standalone-bundle вырезан)
 
         if (Environment.isLinux and Syscall.supports_statx_on_linux.load(.monotonic)) {
             return switch (Syscall.statx(path, &.{ .type, .mode, .nlink, .uid, .gid, .atime, .mtime, .ctime, .btime, .ino, .size, .blocks })) {

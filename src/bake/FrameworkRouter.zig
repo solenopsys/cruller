@@ -590,7 +590,7 @@ pub const Style = union(enum) {
         comptime conventions: NextRoutingConvention,
     ) ![]Part {
         var i: usize = 1;
-        var parts: std.ArrayListUnmanaged(Part) = .{};
+        var parts: std.ArrayListUnmanaged(Part) = .empty;
         const stop_chars = switch (conventions) {
             .pages => "[",
             .app => "[(@",
@@ -909,7 +909,7 @@ pub const TinyLog = struct {
     }
 
     pub fn write(log: *TinyLog, comptime fmt: []const u8, args: anytype) void {
-        log.msg.len = @intCast(if (std.fmt.bufPrint(&log.msg.buffer, fmt, args)) |slice| slice.len else brk: {
+        log.msg.len = @intCast(if (std.fmt.bufPrint(&log.msg.buffer, fmt, args)) |slice| slice.len else |_| brk: {
             // truncation should never happen because the buffer is HUGE. handle it anyways
             @memcpy(log.msg.buffer[log.msg.buffer.len - 3 ..], "...");
             break :brk log.msg.buffer.len;

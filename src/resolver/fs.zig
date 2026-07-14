@@ -48,7 +48,7 @@ pub const FileSystem = struct {
 
     var tmpname_id_number = std.atomic.Value(u32).init(0);
     pub fn tmpname(extname: string, buf: []u8, hash: u64) std.fmt.BufPrintError![:0]u8 {
-        const hex_value = @as(u64, @truncate(@as(u128, @intCast(hash)) | @as(u128, @intCast(std.time.nanoTimestamp()))));
+        const hex_value = @as(u64, @truncate(@as(u128, @intCast(hash)) | @as(u128, @intCast(bun.compat.timestamp()))));
 
         return try std.fmt.bufPrintZ(buf, ".{f}-{f}.{s}", .{
             bun.fmt.hexIntLower(hex_value),
@@ -1447,7 +1447,7 @@ pub const FileSystem = struct {
             }
 
             const stat = try bun.sys.lstat_absolute(absolute_path_c);
-            const is_symlink = stat.kind == std.fs.File.Kind.sym_link;
+            const is_symlink = stat.kind == std.Io.File.Kind.sym_link;
             var file_kind = stat.kind;
 
             var symlink: []const u8 = "";
@@ -1456,7 +1456,7 @@ pub const FileSystem = struct {
                 var file: bun.FD = if (existing_fd.unwrapValid()) |valid|
                     valid
                 else if (store_fd)
-                    .fromStdFile(try std.fs.openFileAbsoluteZ(absolute_path_c, .{ .mode = .read_only }))
+                    .fromStdFile(try std.Io.Dir.openFileAbsolute(bun.compat.io(), absolute_path_c, .{ .mode = .read_only }))
                 else
                     .fromStdFile(try bun.openFileForPath(absolute_path_c));
                 setMaxFd(file.native());

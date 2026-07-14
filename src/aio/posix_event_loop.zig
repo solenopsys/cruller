@@ -373,10 +373,7 @@ pub const FilePoll = struct {
                 var handler: *StaticPipeWriter = ptr.as(StaticPipeWriter);
                 handler.onPoll(size_or_offset, poll.flags.contains(.hup));
             },
-            @field(Owner.Tag, @typeName(SecurityScanStaticPipeWriter)) => {
-                var handler: *SecurityScanStaticPipeWriter = ptr.as(SecurityScanStaticPipeWriter);
-                handler.onPoll(size_or_offset, poll.flags.contains(.hup));
-            },
+            // bzrt-cut: SecurityScanStaticPipeWriter (security-scan вырезан)
             @field(Owner.Tag, @typeName(FileSink)) => {
                 var handler: *FileSink = ptr.as(FileSink);
                 handler.onPoll(size_or_offset, poll.flags.contains(.hup));

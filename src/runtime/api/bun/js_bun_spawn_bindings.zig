@@ -123,7 +123,7 @@ pub fn spawnMaybeSync(
     const allocator = arena.allocator();
 
     var override_env = false;
-    var env_array = std.ArrayListUnmanaged(?[*:0]const u8){};
+    var env_array = std.ArrayListUnmanaged(?[*:0]const u8).empty;
     var jsc_vm = globalThis.bunVM();
 
     var cwd = jsc_vm.transpiler.fs.top_level_dir;
@@ -671,7 +671,7 @@ pub fn spawnMaybeSync(
         .stdin = .{ .ignore = {} },
         .stdout = .{ .ignore = {} },
         .stderr = .{ .ignore = {} },
-        .stdio_pipes = .{},
+        .stdio_pipes = .empty,
         .ipc_data = null,
         .flags = .{
             .is_sync = is_sync,

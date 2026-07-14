@@ -1289,7 +1289,7 @@ fn buildConnectRequest(
     // Calculate size for the CONNECT request
     var buf = std.array_list.Managed(u8).init(allocator);
     errdefer buf.deinit();
-    const writer = buf.writer();
+    const writer = bun.compat.listWriter(&buf);
 
     // CONNECT host:port HTTP/1.1\r\n
     try writer.print("CONNECT {s}:{d} HTTP/1.1\r\n", .{ target_host, target_port });

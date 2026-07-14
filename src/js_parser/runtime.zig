@@ -20,7 +20,7 @@ pub const Fallback = struct {
         pub fn format(this: Base64FallbackMessage, writer: *std.Io.Writer) std.Io.Writer.Error!void {
             var bb = std.array_list.Managed(u8).init(this.allocator);
             defer bb.deinit();
-            const bb_writer = bb.writer();
+            const bb_writer = bun.compat.listWriter(&bb);
             const Encoder = schema.Writer(@TypeOf(bb_writer));
             var encoder = Encoder.init(bb_writer);
             this.msg.encode(&encoder) catch {};

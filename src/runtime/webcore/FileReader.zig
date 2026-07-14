@@ -129,7 +129,7 @@ pub const Lazy = union(enum) {
             this.pollable = bun.sys.isPollable(@intCast(stat.mode)) or is_nonblocking or (file.is_atty orelse false);
             this.file_type = if (bun.S.ISFIFO(@intCast(stat.mode)))
                 .pipe
-            else if (bun.S.ISSOCK(stat.mode))
+            else if (bun.S.ISSOCK(@intCast(stat.mode)))
                 .socket
             else
                 .file;

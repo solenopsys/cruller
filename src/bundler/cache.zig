@@ -154,7 +154,7 @@ pub const Fs = struct {
     ) !Entry {
         var rfs = _fs.fs;
 
-        var file_handle: std.fs.File = if (_file_handle) |__file| __file.stdFile() else undefined;
+        var file_handle: std.Io.File = if (_file_handle) |__file| __file.stdFile() else undefined;
 
         if (_file_handle == null) {
             if (FeatureFlags.store_file_descriptors and dirname_fd.isValid()) {

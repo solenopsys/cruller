@@ -454,7 +454,7 @@ pub fn NewRequestContext(comptime ssl_enabled: bool, comptime debug_mode: bool, 
 
             // Explicitly use `this.allocator` and *not* the arena
             var bb = std.array_list.Managed(u8).init(this.allocator);
-            const bb_writer = bb.writer();
+            const bb_writer = bun.compat.listWriter(&bb);
 
             Fallback.renderBackend(
                 arena_allocator,
@@ -1740,7 +1740,7 @@ pub fn NewRequestContext(comptime ssl_enabled: bool, comptime debug_mode: bool, 
 
                             var bb = std.array_list.Managed(u8).init(allocator);
                             defer bb.clearAndFree();
-                            const bb_writer = bb.writer();
+                            const bb_writer = bun.compat.listWriter(&bb);
 
                             Fallback.renderBackend(
                                 allocator,
@@ -2489,7 +2489,7 @@ pub fn NewRequestContext(comptime ssl_enabled: bool, comptime debug_mode: bool, 
                         };
                         // }
                     }
-                    this.request_body_buf = .{};
+                    this.request_body_buf = .empty;
 
                     if (old == .Locked) {
                         var loop = vm.eventLoop();
@@ -2519,7 +2519,7 @@ pub fn NewRequestContext(comptime ssl_enabled: bool, comptime debug_mode: bool, 
             // This means we have received part of the body but not the whole thing
             if (this.request_body_buf.items.len > 0) {
                 var emptied = this.request_body_buf;
-                this.request_body_buf = .{};
+                this.request_body_buf = .empty;
                 return .{
                     .owned = .{
                         .list = emptied.toManaged(this.allocator),

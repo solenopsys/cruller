@@ -130,7 +130,7 @@ pub fn respValueToJSWithOptions(self: *RESPValue, globalObject: *jsc.JSGlobalObj
             // Try to parse as number if possible
             if (std.fmt.parseInt(i64, str, 10)) |int| {
                 return jsc.JSValue.jsNumber(int);
-            } else {
+            } else |_| {
                 // If it doesn't fit in an i64, return as string
                 return bun.String.createUTF8ForJS(globalObject, str);
             }

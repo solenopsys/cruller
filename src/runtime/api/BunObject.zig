@@ -172,7 +172,7 @@ pub const BunObject = struct {
         @export(&BunObject.gzipSync, .{ .name = callbackName("gzipSync") });
         @export(&BunObject.indexOfLine, .{ .name = callbackName("indexOfLine") });
         @export(&BunObject.inflateSync, .{ .name = callbackName("inflateSync") });
-        @export(&BunObject.jest, .{ .name = callbackName("jest") });
+        // bzrt-cut: jest (test_runner вырезан)
         @export(&BunObject.listen, .{ .name = callbackName("listen") });
         @export(&BunObject.mmap, .{ .name = callbackName("mmap") });
         @export(&BunObject.nanoseconds, .{ .name = callbackName("nanoseconds") });
@@ -632,7 +632,10 @@ pub fn sleepSync(globalObject: *jsc.JSGlobalObject, callframe: *jsc.CallFrame) b
         return globalObject.throwInvalidArguments("argument to sleepSync must not be negative, got {d}", .{milliseconds});
     }
 
-    std.Thread.sleep(@as(u64, @intCast(milliseconds)) * std.time.ns_per_ms);
+    // zig 0.16: std.Thread.sleep удалён → raw nanosleep
+    const ns: u64 = @as(u64, @intCast(milliseconds)) * std.time.ns_per_ms;
+    var req = std.os.linux.timespec{ .sec = @intCast(ns / std.time.ns_per_s), .nsec = @intCast(ns % std.time.ns_per_s) };
+    _ = std.os.linux.nanosleep(&req, null);
     return .js_undefined;
 }
 
@@ -1555,8 +1558,7 @@ pub const JSZlib = struct {
                     defer reader.deinit();
                     return globalThis.throwValue(ZigString.init(reader.errorMessage() orelse "Zlib returned an error").toErrorInstance(globalThis));
                 };
-                reader.list = .{ .items = reader.list.items };
-                reader.list.capacity = reader.list.items.len;
+                reader.list = .{ .items = reader.list.items, .capacity = reader.list.items.len };
                 reader.list_ptr = &reader.list;
 
                 var array_buffer = jsc.ArrayBuffer.fromBytes(reader.list.items, .Uint8Array);
@@ -1662,7 +1664,7 @@ pub const JSZlib = struct {
                     defer reader.deinit();
                     return globalThis.throwValue(ZigString.init(reader.errorMessage() orelse "Zlib returned an error").toErrorInstance(globalThis));
                 };
-                reader.list = .{ .items = bun.handleOom(reader.list.toOwnedSlice(allocator)) };
+                reader.list = .{ .items = bun.handleOom(reader.list.toOwnedSlice(allocator)), .capacity = 0 };
                 reader.list.capacity = reader.list.items.len;
                 reader.list_ptr = &reader.list;
 

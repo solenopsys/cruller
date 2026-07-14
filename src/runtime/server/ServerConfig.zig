@@ -306,7 +306,7 @@ pub fn deinit(this: *ServerConfig) void {
 
 pub fn computeID(this: *const ServerConfig, allocator: std.mem.Allocator) []const u8 {
     var arraylist = std.array_list.Managed(u8).init(allocator);
-    var writer = arraylist.writer();
+    var writer = bun.compat.listWriter(&arraylist);
 
     writer.writeAll("[http]-") catch {};
     switch (this.address) {
@@ -449,7 +449,7 @@ pub fn fromJS(
             if (env.get(PORT)) |port| {
                 if (std.fmt.parseInt(u16, port, 10)) |_port| {
                     break :brk _port;
-                } else {}
+                } else |_| {}
             }
         }
 

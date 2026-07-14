@@ -333,7 +333,7 @@ pub const Lexer = struct {
                 } else if (isInvalidLegacyOctalLiteral) {
                     if (std.fmt.parseFloat(f64, text)) |num| {
                         lexer.number = num;
-                    } else {
+                    } else |_| {
                         try lexer.addSyntaxError(lexer.start, "Invalid number {s}", .{text});
                     }
                 }
@@ -463,7 +463,7 @@ pub const Lexer = struct {
                         }
                     }
                     text = bytes;
-                } else {
+                } else |_| {
                     try lexer.addSyntaxError(lexer.start, "Out of Memory Wah Wah Wah", .{});
                     return;
                 }
@@ -480,7 +480,7 @@ pub const Lexer = struct {
                 // Parse a double-precision floating-point number;
                 if (std.fmt.parseFloat(f64, text)) |num| {
                     lexer.number = num;
-                } else {
+                } else |_| {
                     try lexer.addSyntaxError(lexer.start, "Invalid number", .{});
                 }
             }

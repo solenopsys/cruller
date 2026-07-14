@@ -108,16 +108,7 @@ pub const Action = union(enum) {
     visit: []const u8,
     print: []const u8,
 
-    /// bun.bundle_v2.LinkerContext.generateCompileResultForJSChunk
-    bundle_generate_chunk: if (bun.Environment.show_crash_trace) struct {
-        context: *const anyopaque, // unfortunate dependency loop workaround
-        chunk: *const anyopaque, // bzrt: bundle_v2 вырезан
-        part_range: *const anyopaque, // bzrt: bundle_v2 вырезан
-
-        pub fn linkerContext(data: *const @This()) *const bun.bundle_v2.LinkerContext {
-            return @ptrCast(@alignCast(data.context));
-        }
-    } else void,
+    bundle_generate_chunk: void,
 
     resolver: if (bun.Environment.show_crash_trace) struct {
         source_dir: []const u8,
@@ -132,25 +123,7 @@ pub const Action = union(enum) {
             .parse => |path| try writer.print("parsing {s}", .{path}),
             .visit => |path| try writer.print("visiting {s}", .{path}),
             .print => |path| try writer.print("printing {s}", .{path}),
-            .bundle_generate_chunk => |data| if (bun.Environment.show_crash_trace) {
-                try writer.print(
-                    \\generating bundler chunk
-                    \\  chunk entry point: {?s}
-                    \\  source: {?s}
-                    \\  part range: {d}..{d}
-                ,
-                    .{
-                        if (data.part_range.source_index.isValid()) data.linkerContext().parse_graph.input_files
-                            .items(.source)[data.chunk.entry_point.source_index]
-                            .path.text else null,
-                        if (data.part_range.source_index.isValid()) data.linkerContext().parse_graph.input_files
-                            .items(.source)[data.part_range.source_index.get()]
-                            .path.text else null,
-                        data.part_range.part_index_begin,
-                        data.part_range.part_index_end,
-                    },
-                );
-            },
+            .bundle_generate_chunk => try writer.writeAll("generating bundler chunk"),
             .resolver => |res| if (bun.Environment.show_crash_trace) {
                 try writer.print("resolving {s} from {s} ({s})", .{
                     res.import_path,
@@ -344,12 +317,11 @@ pub fn crashHandler(
                     if (error_return_trace) |ert| {
                         if (ert.index > 0) break :blk ert;
                     }
-                    trace_buf = std.builtin.StackTrace{
-                        .index = 0,
-                        .instruction_addresses = &addr_buf,
-                    };
                     const desired_begin_addr = begin_addr orelse @returnAddress();
-                    std.debug.captureStackTrace(desired_begin_addr, &trace_buf);
+                    // zig 0.16: captureStackTrace(begin, *StackTrace) → captureCurrentStackTrace(opts, buf) → debug.StackTrace
+                    // конвертируем в builtin.StackTrace (тип error_return_trace, ABI паник-хендлера)
+                    const captured = std.debug.captureCurrentStackTrace(.{ .first_address = desired_begin_addr }, &addr_buf);
+                    trace_buf = .{ .index = captured.return_addresses.len, .instruction_addresses = &addr_buf };
 
                     if (comptime bun.Environment.isGlibc) {
                         var addr_buf_libc: [20]usize = undefined;
@@ -509,7 +481,7 @@ pub fn crashHandler(
         },
         else => {
             // Panicked or otherwise looped into the panic handler while trying to exit.
-            std.posix.abort();
+            std.c.abort();
         },
     };
 
@@ -872,10 +844,10 @@ fn handleSegfaultPosix(sig: i32, info: *const std.posix.siginfo_t, _: ?*const an
 
     crashHandler(
         switch (sig) {
-            std.posix.SIG.SEGV => .{ .segmentation_fault = addr },
-            std.posix.SIG.ILL => .{ .illegal_instruction = addr },
-            std.posix.SIG.BUS => .{ .bus_error = addr },
-            std.posix.SIG.FPE => .{ .floating_point_error = addr },
+            @intFromEnum(std.posix.SIG.SEGV) => .{ .segmentation_fault = addr },
+            @intFromEnum(std.posix.SIG.ILL) => .{ .illegal_instruction = addr },
+            @intFromEnum(std.posix.SIG.BUS) => .{ .bus_error = addr },
+            @intFromEnum(std.posix.SIG.FPE) => .{ .floating_point_error = addr },
 
             // we do not register this handler for other signals
             else => unreachable,
@@ -904,10 +876,10 @@ fn updatePosixSegfaultHandler(act: ?*bun.sys.Sigaction) !void {
         }
     }
 
-    bun.sys.sigaction(std.posix.SIG.SEGV, act, null);
-    bun.sys.sigaction(std.posix.SIG.ILL, act, null);
-    bun.sys.sigaction(std.posix.SIG.BUS, act, null);
-    bun.sys.sigaction(std.posix.SIG.FPE, act, null);
+    bun.sys.sigaction(@intFromEnum(std.posix.SIG.SEGV), act, null);
+    bun.sys.sigaction(@intFromEnum(std.posix.SIG.ILL), act, null);
+    bun.sys.sigaction(@intFromEnum(std.posix.SIG.BUS), act, null);
+    bun.sys.sigaction(@intFromEnum(std.posix.SIG.FPE), act, null);
 }
 
 var windows_segfault_handle: ?windows.HANDLE = null;
@@ -1287,8 +1259,8 @@ const StackLine = struct {
 
                             // Overflowing addition is used to handle the case of VSDOs
                             // having a p_vaddr = 0xffffffffff700000
-                            const seg_start = info.addr +% phdr.p_vaddr;
-                            const seg_end = seg_start + phdr.p_memsz;
+                            const seg_start = info.addr +% phdr.vaddr;
+                            const seg_end = seg_start + phdr.memsz;
                             if (context.address >= seg_start and context.address < seg_end) {
                                 // const name = bun.sliceTo(info.name, 0) orelse "";
                                 context.result = .{
@@ -1603,7 +1575,7 @@ fn crash() noreturn {
                 std.posix.SIG.HUP,
                 std.posix.SIG.TERM,
             }) |sig| {
-                bun.sys.sigaction(sig, &sigact, null);
+                bun.sys.sigaction(@intFromEnum(sig), &sigact, null);
             }
 
             @trap();

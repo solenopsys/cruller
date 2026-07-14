@@ -96,15 +96,15 @@ pub const FD = packed struct(backing_int) {
         return .fromNative(file.handle);
     }
 
-    pub fn fromStdDir(dir: std.fs.Dir) FD {
+    pub fn fromStdDir(dir: std.Io.Dir) FD {
         return .fromNative(dir.fd);
     }
 
-    pub fn stdFile(fd: FD) std.fs.File {
+    pub fn stdFile(fd: FD) std.Io.File {
         return .{ .handle = fd.native() };
     }
 
-    pub fn stdDir(fd: FD) std.fs.Dir {
+    pub fn stdDir(fd: FD) std.Io.Dir {
         return .{ .fd = fd.native() };
     }
 

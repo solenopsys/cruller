@@ -439,7 +439,7 @@ const Linux = struct {
     pub const Watch = struct {
         /// All wds belonging to this PathWatcher (one for a file/non-recursive dir,
         /// many for a recursive dir).
-        wds: std.ArrayListUnmanaged(i32) = .{},
+        wds: std.ArrayListUnmanaged(i32) = .empty,
 
         pub fn deinit(this: *Watch) void {
             this.wds.deinit(bun.default_allocator);
@@ -494,7 +494,7 @@ const Linux = struct {
         }
         const wd: i32 = @intCast(rc);
         const gop = bun.handleOom(plat.wd_map.getOrPut(bun.default_allocator, wd));
-        if (!gop.found_existing) gop.value_ptr.* = .{};
+        if (!gop.found_existing) gop.value_ptr.* = .empty;
         // This wd may already have this watcher as an owner:
         //   - IN_CREATE raced the initial walk (same subpath → the reassign is a no-op)
         //   - a subdirectory was *renamed* within the tree: IN_MOVED_TO re-adds it,

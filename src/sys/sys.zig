@@ -2279,7 +2279,7 @@ pub inline fn sigaddset(set: *sigset_t, sig: u8) void {
         set.* |= @as(c_ulong, 1) << @as(u6, @intCast(sig - 1));
         return;
     }
-    posix.sigaddset(set, sig);
+    posix.sigaddset(set, @enumFromInt(sig));
 }
 
 pub fn sigaction(sig: u8, noalias act: ?*const Sigaction, noalias oact: ?*Sigaction) void {
@@ -2293,7 +2293,8 @@ pub fn sigaction(sig: u8, noalias act: ?*const Sigaction, noalias oact: ?*Sigact
         *const fn (c_int, noalias ?*const Sigaction, noalias ?*Sigaction) callconv(.c) c_int,
         .{ .name = "sigaction" },
     ) else std.c.sigaction;
-    _ = libc_sigaction(sig, act, oact);
+    // zig 0.16: std.c.sigaction первый параметр стал enum SIG (linux-only ветка)
+    _ = libc_sigaction(@enumFromInt(sig), act, oact);
 }
 
 pub fn ppoll(fds: []std.posix.pollfd, timeout: ?*std.posix.timespec, sigmask: ?*const std.posix.sigset_t) Maybe(usize) {
@@ -3112,7 +3113,7 @@ pub fn mmapFile(path: [:0]const u8, flags: std.c.MAP, wanted_size: ?usize, offse
 
     if (wanted_size) |size_| size = @min(size, size_);
 
-    const map = switch (mmap(null, size, posix.PROT.READ | posix.PROT.WRITE, flags, fd, offset)) {
+    const map = switch (mmap(null, size, @as(u32, @bitCast(posix.PROT{ .READ = true, .WRITE = true })), flags, fd, offset)) {
         .result => |map| map,
 
         .err => |err| {
@@ -3214,8 +3215,9 @@ pub fn socketpairImpl(domain: socketpair_t, socktype: socketpair_t, protocol: so
 
     if (comptime Environment.isLinux) {
         while (true) {
-            const nonblock_flag: i32 = if (nonblocking_status == .nonblocking) linux.SOCK.NONBLOCK else 0;
-            const rc = std.os.linux.socketpair(domain, socktype | linux.SOCK.CLOEXEC | nonblock_flag, protocol, &fds_i);
+            const nonblock_flag: socketpair_t = if (nonblocking_status == .nonblocking) linux.SOCK.NONBLOCK else 0;
+            // zig 0.16: linux.socketpair аргументы стали u32
+            const rc = std.os.linux.socketpair(@intCast(domain), @intCast(socktype | linux.SOCK.CLOEXEC | nonblock_flag), @intCast(protocol), &fds_i);
             if (Maybe([2]bun.FD).errnoSys(rc, .socketpair)) |err| {
                 if (err.getErrno() == .INTR) continue;
 

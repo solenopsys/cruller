@@ -1,3 +1,6 @@
+Cruller is a fork of [Bun](https://github.com/oven-sh/bun) 1.3.14. Everything below is inherited from Bun
+as-is and still applies to the code kept in this fork.
+
 Bun itself is MIT-licensed.
 
 ## JavaScriptCore

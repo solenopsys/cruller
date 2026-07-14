@@ -257,8 +257,8 @@ pub fn crashHandler(
                     Output.flush();
                     Output.Source.Stdio.restore();
 
-                    writer.writeAll("=" ** 60 ++ "\n") catch std.posix.abort();
-                    printMetadata(writer) catch std.posix.abort();
+                    writer.writeAll("=" ** 60 ++ "\n") catch std.c.abort();
+                    printMetadata(writer) catch std.c.abort();
 
                     if (inside_native_plugin) |name| {
                         const native_plugin_name = name;
@@ -269,7 +269,7 @@ pub fn crashHandler(
                             \\This indicates either a bug in the native plugin or in Bun.
                             \\
                         ;
-                        writer.print(Output.prettyFmt(fmt, true), .{native_plugin_name}) catch std.posix.abort();
+                        writer.print(Output.prettyFmt(fmt, true), .{native_plugin_name}) catch std.c.abort();
                     } else if (bun.analytics.Features.unsupported_uv_function > 0) {
                         const name = unsupported_uv_function orelse "<unknown>";
                         const fmt =
@@ -283,57 +283,57 @@ pub fn crashHandler(
                             \\
                             \\
                         ;
-                        writer.print(Output.prettyFmt(fmt, true), .{name}) catch std.posix.abort();
+                        writer.print(Output.prettyFmt(fmt, true), .{name}) catch std.c.abort();
                         has_printed_message = true;
                     }
                 } else {
                     if (Output.enable_ansi_colors_stderr) {
-                        writer.writeAll(Output.prettyFmt("<red>", true)) catch std.posix.abort();
+                        writer.writeAll(Output.prettyFmt("<red>", true)) catch std.c.abort();
                     }
-                    writer.writeAll("oh no") catch std.posix.abort();
+                    writer.writeAll("oh no") catch std.c.abort();
                     if (Output.enable_ansi_colors_stderr) {
-                        writer.writeAll(Output.prettyFmt("<r><d>: multiple threads are crashing<r>\n", true)) catch std.posix.abort();
+                        writer.writeAll(Output.prettyFmt("<r><d>: multiple threads are crashing<r>\n", true)) catch std.c.abort();
                     } else {
-                        writer.writeAll(Output.prettyFmt(": multiple threads are crashing\n", true)) catch std.posix.abort();
+                        writer.writeAll(Output.prettyFmt(": multiple threads are crashing\n", true)) catch std.c.abort();
                     }
                 }
 
                 if (reason != .out_of_memory or debug_trace) {
                     if (Output.enable_ansi_colors_stderr) {
-                        writer.writeAll(Output.prettyFmt("<red>", true)) catch std.posix.abort();
+                        writer.writeAll(Output.prettyFmt("<red>", true)) catch std.c.abort();
                     }
 
-                    writer.writeAll("panic") catch std.posix.abort();
+                    writer.writeAll("panic") catch std.c.abort();
 
                     if (Output.enable_ansi_colors_stderr) {
-                        writer.writeAll(Output.prettyFmt("<r><d>", true)) catch std.posix.abort();
+                        writer.writeAll(Output.prettyFmt("<r><d>", true)) catch std.c.abort();
                     }
 
-                    if (bun.cli.Cli.is_main_thread) {
-                        writer.writeAll("(main thread)") catch std.posix.abort();
+                    if (bun.cli_compat.is_main_thread) {
+                        writer.writeAll("(main thread)") catch std.c.abort();
                     } else switch (bun.Environment.os) {
                         .windows => {
                             var name: std.os.windows.PWSTR = undefined;
                             const result = bun.windows.GetThreadDescription(bun.windows.GetCurrentThread(), &name);
                             if (std.os.windows.HRESULT_CODE(result) == .SUCCESS and name[0] != 0) {
-                                writer.print("({f})", .{bun.fmt.utf16(bun.span(name))}) catch std.posix.abort();
+                                writer.print("({f})", .{bun.fmt.utf16(bun.span(name))}) catch std.c.abort();
                             } else {
-                                writer.print("(thread {d})", .{bun.c.GetCurrentThreadId()}) catch std.posix.abort();
+                                writer.print("(thread {d})", .{bun.c.GetCurrentThreadId()}) catch std.c.abort();
                             }
                         },
                         .mac, .linux, .freebsd => {},
                         .wasm => @compileError("TODO"),
                     }
 
-                    writer.writeAll(": ") catch std.posix.abort();
+                    writer.writeAll(": ") catch std.c.abort();
                     if (Output.enable_ansi_colors_stderr) {
-                        writer.writeAll(Output.prettyFmt("<r>", true)) catch std.posix.abort();
+                        writer.writeAll(Output.prettyFmt("<r>", true)) catch std.c.abort();
                     }
-                    writer.print("{f}\n", .{reason}) catch std.posix.abort();
+                    writer.print("{f}\n", .{reason}) catch std.c.abort();
                 }
 
                 if (current_action) |action| {
-                    writer.print("Crashed while {f}\n", .{action}) catch std.posix.abort();
+                    writer.print("Crashed while {f}\n", .{action}) catch std.c.abort();
                 }
 
                 var addr_buf: [20]usize = undefined;
@@ -376,15 +376,15 @@ pub fn crashHandler(
                         .trace = trace,
                         .reason = reason,
                         .action = .view_trace,
-                    }}) catch std.posix.abort();
+                    }}) catch std.c.abort();
                 } else {
                     if (!has_printed_message) {
                         has_printed_message = true;
-                        writer.writeAll("oh no") catch std.posix.abort();
+                        writer.writeAll("oh no") catch std.c.abort();
                         if (Output.enable_ansi_colors_stderr) {
-                            writer.writeAll(Output.prettyFmt("<r><d>:<r> ", true)) catch std.posix.abort();
+                            writer.writeAll(Output.prettyFmt("<r><d>:<r> ", true)) catch std.c.abort();
                         } else {
-                            writer.writeAll(Output.prettyFmt(": ", true)) catch std.posix.abort();
+                            writer.writeAll(Output.prettyFmt(": ", true)) catch std.c.abort();
                         }
                         if (inside_native_plugin) |name| {
                             const native_plugin_name = name;
@@ -395,7 +395,7 @@ pub fn crashHandler(
                                 \\please file a GitHub issue using the link below:
                                 \\
                                 \\
-                            , true), .{native_plugin_name}) catch std.posix.abort();
+                            , true), .{native_plugin_name}) catch std.c.abort();
                         } else if (bun.analytics.Features.unsupported_uv_function > 0) {
                             const name = unsupported_uv_function orelse "<unknown>";
                             const fmt =
@@ -409,7 +409,7 @@ pub fn crashHandler(
                                 \\
                                 \\
                             ;
-                            writer.print(Output.prettyFmt(fmt, true), .{name}) catch std.posix.abort();
+                            writer.print(Output.prettyFmt(fmt, true), .{name}) catch std.c.abort();
                         } else if (reason == .out_of_memory) {
                             writer.writeAll(
                                 \\Bun has run out of memory.
@@ -418,7 +418,7 @@ pub fn crashHandler(
                                 \\please file a GitHub issue using the link below:
                                 \\
                                 \\
-                            ) catch std.posix.abort();
+                            ) catch std.c.abort();
                         } else {
                             writer.writeAll(
                                 \\Bun has crashed. This indicates a bug in Bun, not your code.
@@ -427,31 +427,31 @@ pub fn crashHandler(
                                 \\please file a GitHub issue using the link below:
                                 \\
                                 \\
-                            ) catch std.posix.abort();
+                            ) catch std.c.abort();
                         }
                     }
 
                     if (Output.enable_ansi_colors_stderr) {
-                        writer.print(Output.prettyFmt("<cyan>", true), .{}) catch std.posix.abort();
+                        writer.print(Output.prettyFmt("<cyan>", true), .{}) catch std.c.abort();
                     }
 
-                    writer.writeAll(" ") catch std.posix.abort();
+                    writer.writeAll(" ") catch std.c.abort();
 
                     trace_str_buf.writer().print("{f}", .{TraceString{
                         .trace = trace,
                         .reason = reason,
                         .action = .open_issue,
-                    }}) catch std.posix.abort();
+                    }}) catch std.c.abort();
 
-                    writer.writeAll(trace_str_buf.slice()) catch std.posix.abort();
+                    writer.writeAll(trace_str_buf.slice()) catch std.c.abort();
 
-                    writer.writeAll("\n") catch std.posix.abort();
+                    writer.writeAll("\n") catch std.c.abort();
                 }
 
                 if (Output.enable_ansi_colors_stderr) {
-                    writer.writeAll(Output.prettyFmt("<r>\n", true)) catch std.posix.abort();
+                    writer.writeAll(Output.prettyFmt("<r>\n", true)) catch std.c.abort();
                 } else {
-                    writer.writeAll("\n") catch std.posix.abort();
+                    writer.writeAll("\n") catch std.c.abort();
                 }
             }
 
@@ -500,8 +500,8 @@ pub fn crashHandler(
             // call abort()
             var stderr_w = std.Io.File.stderr().writerStreaming(bun.compat.io(), &.{});
             const stderr = &stderr_w.interface;
-            stderr.print("\npanic: {f}\n", .{reason}) catch std.posix.abort();
-            stderr.print("panicked during a panic. Aborting.\n", .{}) catch std.posix.abort();
+            stderr.print("\npanic: {f}\n", .{reason}) catch std.c.abort();
+            stderr.print("panicked during a panic. Aborting.\n", .{}) catch std.c.abort();
         },
         3 => {
             // Panicked while printing "Panicked during a panic."
@@ -1363,7 +1363,7 @@ fn encodeTraceString(opts: TraceString, writer: anytype) !void {
             "/" ++
             .{@intFromEnum(Platform.current)},
     );
-    try writer.writeByte(if (bun.cli.Cli.cmd) |cmd| cmd.char() else '_');
+    try writer.writeByte(if (bun.cli_compat.cmd) |cmd| cmd.char() else '_');
 
     try writer.writeAll(version_char ++ git_sha);
 

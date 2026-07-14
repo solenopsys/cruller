@@ -131,12 +131,13 @@ pub fn parse(global: *jsc.JSGlobalObject, callframe: *jsc.CallFrame) bun.JSError
     // - "[::1]" -> "::1"
     // - "0x.0x.0" -> "0.0.0.0"
     const paddr = host.latin1(); // presentation address
+    const be_port = std.mem.nativeToBig(u16, port_);
     const addr = if (paddr[0] == '[' and paddr[paddr.len - 1] == ']') v6: {
         const v6 = net.Ip6Address.parse(paddr[1 .. paddr.len - 1], port_) catch return .js_undefined;
-        break :v6 SocketAddress{ ._addr = .{ .sin6 = v6.sa } };
+        break :v6 SocketAddress{ ._addr = sockaddr.v6(be_port, v6.bytes, v6.flow, v6.interface.index) };
     } else v4: {
         const v4 = net.Ip4Address.parse(paddr, port_) catch return .js_undefined;
-        break :v4 SocketAddress{ ._addr = .{ .sin = v4.sa } };
+        break :v4 SocketAddress{ ._addr = sockaddr.v4(be_port, @bitCast(v4.bytes)) };
     };
 
     return SocketAddress.new(addr).toJS(global);
@@ -690,4 +691,4 @@ const CallFrame = jsc.CallFrame;
 const JSValue = jsc.JSValue;
 
 const std = @import("std");
-const net = std.net;
+const net = std.Io.net;

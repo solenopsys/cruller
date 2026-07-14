@@ -10,7 +10,7 @@ pub const linux = struct {
         return if (signed > -4096 and signed < 0) -1 else int;
     }
 
-    pub export fn stat(path: [*:0]const u8, buf: *std.c.Stat) c_int {
+    pub export fn stat(path: [*:0]const u8, buf: *bun.sys.KernelStat) c_int {
         // https://git.musl-libc.org/cgit/musl/tree/src/stat/stat.c
         const rc = std.os.linux.syscall4(.fstatat64, @as(usize, @bitCast(@as(isize, std.os.linux.AT.FDCWD))), @intFromPtr(path), @intFromPtr(buf), 0);
         return simulateLibcErrno(rc);
@@ -21,18 +21,18 @@ pub const linux = struct {
     pub const fstat64 = fstat;
     pub const fstatat64 = fstatat;
 
-    pub export fn lstat(path: [*:0]const u8, buf: *std.c.Stat) c_int {
+    pub export fn lstat(path: [*:0]const u8, buf: *bun.sys.KernelStat) c_int {
         // https://git.musl-libc.org/cgit/musl/tree/src/stat/lstat.c
         const rc = std.os.linux.syscall4(.fstatat64, @as(usize, @bitCast(@as(isize, std.os.linux.AT.FDCWD))), @intFromPtr(path), @intFromPtr(buf), std.os.linux.AT.SYMLINK_NOFOLLOW);
         return simulateLibcErrno(rc);
     }
 
-    pub export fn fstat(fd: c_int, buf: *std.c.Stat) c_int {
+    pub export fn fstat(fd: c_int, buf: *bun.sys.KernelStat) c_int {
         const rc = std.os.linux.syscall2(.fstat, @as(usize, @bitCast(@as(isize, fd))), @intFromPtr(buf));
         return simulateLibcErrno(rc);
     }
 
-    pub export fn fstatat(dirfd: i32, path: [*:0]const u8, buf: *std.c.Stat, flags: u32) c_int {
+    pub export fn fstatat(dirfd: i32, path: [*:0]const u8, buf: *bun.sys.KernelStat, flags: u32) c_int {
         const rc = std.os.linux.syscall4(.fstatat64, @as(usize, @bitCast(@as(isize, dirfd))), @intFromPtr(path), @intFromPtr(buf), flags);
         return simulateLibcErrno(rc);
     }

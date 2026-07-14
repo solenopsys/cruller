@@ -217,7 +217,7 @@ const std = @import("std");
 const bun = @import("bun");
 const BabyList = bun.BabyList;
 const logger = bun.logger;
-const TypeScript = bun.js_parser.TypeScript;
+const TypeScript = @import("./TypeScript.zig");
 
 const js_ast = bun.ast;
 const BindingNodeIndex = js_ast.BindingNodeIndex;

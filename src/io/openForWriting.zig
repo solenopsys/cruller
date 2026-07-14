@@ -81,7 +81,7 @@ pub fn openForWritingImpl(
             },
             .result => |stat| {
                 // pollable.* = bun.sys.isPollable(stat.mode);
-                pollable.* = isPollable(stat.mode);
+                pollable.* = isPollable(@intCast(stat.mode));
                 if (!pollable.*) {
                     isatty = bun.compat.isatty(fd.native());
                 }
@@ -90,7 +90,7 @@ pub fn openForWritingImpl(
                     pollable.* = true;
                 }
 
-                is_socket.* = std.posix.S.ISSOCK(stat.mode);
+                is_socket.* = std.posix.S.ISSOCK(@intCast(stat.mode));
 
                 if (force_sync or isatty) {
                     // Prevents interleaved or dropped stdout/stderr output for terminals.

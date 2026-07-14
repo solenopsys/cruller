@@ -172,6 +172,9 @@ pub fn AutoArrayHashMapManaged(comptime K: type, comptime V: type) type {
         pub fn swapRemove(self: *Self, key: K) bool {
             return self.unmanaged.swapRemove(key);
         }
+        pub fn swapRemoveAt(self: *Self, index: usize) void {
+            self.unmanaged.swapRemoveAt(index);
+        }
         pub fn fetchSwapRemove(self: *Self, key: K) ?Unmanaged.KV {
             return self.unmanaged.fetchSwapRemove(key);
         }
@@ -387,8 +390,14 @@ pub fn GenericReader(
             const b = try self.readBytesNoEof(@divExact(@typeInfo(T).int.bits, 8));
             return std.mem.readInt(T, &b, endian);
         }
-        pub fn readEnum(self: Self, comptime E: type, comptime endian: std.builtin.Endian) NoEofError!E {
-            return @enumFromInt(try self.readInt(@typeInfo(E).@"enum".tag_type, endian));
+        pub fn readStruct(self: Self, comptime T: type) NoEofError!T {
+            var res: [1]T = undefined;
+            try self.readNoEof(std.mem.sliceAsBytes(res[0..]));
+            return res[0];
+        }
+        pub fn readEnum(self: Self, comptime E: type, comptime endian: std.builtin.Endian) (NoEofError || error{InvalidValue})!E {
+            const tag = try self.readInt(@typeInfo(E).@"enum".tag_type, endian);
+            return std.meta.intToEnum(E, tag) catch error.InvalidValue;
         }
         pub fn skipBytes(self: Self, n: u64, _: anytype) NoEofError!void {
             var i: u64 = 0;
@@ -484,8 +493,20 @@ pub fn FixedBufferStream(comptime BufferPtr: type) type {
 /// 0.15 std.net.Address: только то, что использует bun (v4/v6 + формат).
 pub const NetAddress = extern union {
     any: std.posix.sockaddr,
-    in: extern struct { sa: std.posix.sockaddr.in },
-    in6: extern struct { sa: std.posix.sockaddr.in6 },
+    in: extern struct {
+        sa: std.posix.sockaddr.in,
+
+        pub fn getPort(self: @This()) u16 {
+            return std.mem.bigToNative(u16, self.sa.port);
+        }
+    },
+    in6: extern struct {
+        sa: std.posix.sockaddr.in6,
+
+        pub fn getPort(self: @This()) u16 {
+            return std.mem.bigToNative(u16, self.sa.port);
+        }
+    },
 
     pub fn initIp4(bytes: [4]u8, port: u16) NetAddress {
         return .{ .in = .{ .sa = .{

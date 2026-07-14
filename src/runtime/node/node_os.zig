@@ -120,10 +120,10 @@ fn cpusImplLinux(globalThis: *jsc.JSGlobalObject) !jsc.JSValue {
     }
 
     // Read /proc/cpuinfo to get model information (optional)
-    if (std.fs.cwd().openFile("/proc/cpuinfo", .{})) |file| {
+    if (bun.sys.File.open("/proc/cpuinfo", bun.O.RDONLY, 0).unwrap()) |file| {
         defer file.close();
 
-        const read = try bun.sys.File.from(file).readToEndWithArrayList(&file_buf, .probably_small).unwrap();
+        const read = try file.readToEndWithArrayList(&file_buf, .probably_small).unwrap();
         defer file_buf.clearRetainingCapacity();
         const contents = file_buf.items[0..read];
 
@@ -157,7 +157,7 @@ fn cpusImplLinux(globalThis: *jsc.JSGlobalObject) !jsc.JSValue {
             const cpu = try values.getIndex(globalThis, cpu_index);
             cpu.put(globalThis, jsc.ZigString.static("model"), jsc.ZigString.static("unknown").withEncoding().toJS(globalThis));
         }
-    } else {
+    } else |_| {
         // Initialize model name to "unknown"
         var it = try values.arrayIterator(globalThis);
         while (try it.next()) |cpu| {
@@ -170,11 +170,11 @@ fn cpusImplLinux(globalThis: *jsc.JSGlobalObject) !jsc.JSValue {
         const cpu = try values.getIndex(globalThis, @truncate(cpu_index));
 
         var path_buf: [128]u8 = undefined;
-        const path = try std.fmt.bufPrint(&path_buf, "/sys/devices/system/cpu/cpu{}/cpufreq/scaling_cur_freq", .{cpu_index});
-        if (std.fs.cwd().openFile(path, .{})) |file| {
+        const path = try std.fmt.bufPrintZ(&path_buf, "/sys/devices/system/cpu/cpu{}/cpufreq/scaling_cur_freq", .{cpu_index});
+        if (bun.sys.File.open(path, bun.O.RDONLY, 0).unwrap()) |file| {
             defer file.close();
 
-            const read = try bun.sys.File.from(file).readToEndWithArrayList(&file_buf, .probably_small).unwrap();
+            const read = try file.readToEndWithArrayList(&file_buf, .probably_small).unwrap();
             defer file_buf.clearRetainingCapacity();
             const contents = file_buf.items[0..read];
 
@@ -182,7 +182,7 @@ fn cpusImplLinux(globalThis: *jsc.JSGlobalObject) !jsc.JSValue {
             const speed = (std.fmt.parseInt(u64, digits, 10) catch 0) / 1000;
 
             cpu.put(globalThis, jsc.ZigString.static("speed"), jsc.JSValue.jsNumber(speed));
-        } else {
+        } else |_| {
             // Initialize CPU speed to 0
             cpu.put(globalThis, jsc.ZigString.static("speed"), jsc.JSValue.jsNumber(0));
         }

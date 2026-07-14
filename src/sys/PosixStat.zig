@@ -74,7 +74,71 @@ pub const PosixStat = extern struct {
     pub fn birthtime(self: *const PosixStat) bun.timespec {
         return self.birthtim;
     }
+
+    /// Convert a raw kernel `struct stat` (as filled by fstatat64/fstat
+    /// syscalls) into PosixStat.
+    pub fn fromKernel(k: *const KernelStat) PosixStat {
+        return PosixStat{
+            .dev = k.dev,
+            .ino = k.ino,
+            .mode = k.mode,
+            .nlink = k.nlink,
+            .uid = k.uid,
+            .gid = k.gid,
+            .rdev = k.rdev,
+            .size = toU64(k.size),
+            .blksize = toU64(k.blksize),
+            .blocks = toU64(k.blocks),
+            .atim = k.atim,
+            .mtim = k.mtim,
+            .ctim = k.ctim,
+            .birthtim = bun.timespec.epoch,
+        };
+    }
 };
 
+/// Linux kernel `struct stat` layout (glibc-compatible on these arches).
+/// zig 0.16 removed std.os.linux Stat/std.c.Stat, but the raw fstatat64/fstat
+/// syscalls still fill exactly this layout — NOT PosixStat/uv_stat_t.
+pub const KernelStat = switch (builtin.cpu.arch) {
+    .x86_64 => extern struct {
+        dev: u64 = 0,
+        ino: u64 = 0,
+        nlink: u64 = 0,
+        mode: u32 = 0,
+        uid: u32 = 0,
+        gid: u32 = 0,
+        __pad0: u32 = 0,
+        rdev: u64 = 0,
+        size: i64 = 0,
+        blksize: i64 = 0,
+        blocks: i64 = 0,
+        atim: bun.timespec = bun.timespec.epoch,
+        mtim: bun.timespec = bun.timespec.epoch,
+        ctim: bun.timespec = bun.timespec.epoch,
+        __unused: [3]i64 = .{ 0, 0, 0 },
+    },
+    .aarch64 => extern struct {
+        dev: u64 = 0,
+        ino: u64 = 0,
+        mode: u32 = 0,
+        nlink: u32 = 0,
+        uid: u32 = 0,
+        gid: u32 = 0,
+        rdev: u64 = 0,
+        __pad: u64 = 0,
+        size: i64 = 0,
+        blksize: i32 = 0,
+        __pad2: i32 = 0,
+        blocks: i64 = 0,
+        atim: bun.timespec = bun.timespec.epoch,
+        mtim: bun.timespec = bun.timespec.epoch,
+        ctim: bun.timespec = bun.timespec.epoch,
+        __unused: [2]u32 = .{ 0, 0 },
+    },
+    else => @compileError("bzrt: only linux x86_64/aarch64 are supported"),
+};
+
+const builtin = @import("builtin");
 const bun = @import("bun");
 const Environment = bun.Environment;

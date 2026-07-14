@@ -189,6 +189,16 @@ pub const windows = struct { // bzrt: linux-only, заглушка для AstGen
     pub const libuv = struct {
         pub const uv_file = i32;
         pub const UV_ECHARSET: i32 = -4080;
+        pub const UV_EFTYPE: i32 = -4028;
+        // uv_dirent_type_t (Node ожидает эти числа в Bun__Dirent__toJS)
+        pub const UV_DIRENT_UNKNOWN: i32 = 0;
+        pub const UV_DIRENT_FILE: i32 = 1;
+        pub const UV_DIRENT_DIR: i32 = 2;
+        pub const UV_DIRENT_LINK: i32 = 3;
+        pub const UV_DIRENT_FIFO: i32 = 4;
+        pub const UV_DIRENT_SOCKET: i32 = 5;
+        pub const UV_DIRENT_CHAR: i32 = 6;
+        pub const UV_DIRENT_BLOCK: i32 = 7;
     };
     pub const NTSTATUS = enum(i32) { SUCCESS = 0, _ };
 };
@@ -1182,6 +1192,15 @@ pub fn isMissingIOUring() bool {
 }
 
 // bzrt-cut: pub const cli = @import("./cli/cli.zig");
+/// bzrt: cli вырезан; crash_handler дёргает только эти два поля для диагностики.
+pub const cli_compat = struct {
+    pub const is_main_thread: bool = true;
+    pub const cmd: ?struct {
+        pub fn char(_: @This()) u8 {
+            return '_';
+        }
+    } = null;
+};
 
 // bzrt-cut: pub const install = @import("./install/install.zig");
 // bzrt-cut: pub const PackageManager = install.PackageManager;
@@ -1904,7 +1923,20 @@ pub const Generation = u16;
 
 pub const zstd = @import("./zstd/zstd.zig");
 pub const StringPointer = schema.api.StringPointer;
-// bzrt-cut: pub const StandaloneModuleGraph = @import("./standalone_graph/StandaloneModuleGraph.zig").StandaloneModuleGraph;
+// bzrt-cut: standalone_graph вырезан (компиляция в single-file exe не нужна).
+// Заглушка: get() всегда null, поэтому раздача embedded-файлов из бинаря
+// отключена — JS всегда приходит с диска пре-собранным.
+pub const StandaloneModuleGraph = struct {
+    pub const File = struct {
+        contents: []const u8 = "",
+    };
+    pub fn get() ?*StandaloneModuleGraph {
+        return null;
+    }
+    pub fn find(_: *StandaloneModuleGraph, _: anytype) ?*File {
+        return null;
+    }
+};
 
 pub const string = @import("./string/string.zig");
 pub const String = string.String;

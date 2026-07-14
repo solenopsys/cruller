@@ -138,8 +138,8 @@ pub const FilePoll = struct {
     /// same as Darwin/OpenBSD (sys/event.h: `#define EV_EOF 0x8000`).
     const EV_EOF: u16 = if (@hasDecl(std.c.EV, "EOF")) std.c.EV.EOF else 0x8000;
 
-    const ShellBufferedWriter = bun.shell.Interpreter.IOWriter.Poll;
-    // const ShellBufferedWriter = bun.shell.Interpreter.WriterImpl;
+    // bzrt-cut: shell вырезан
+    // const ShellBufferedWriter = bun.shell.Interpreter.IOWriter.Poll;
 
     const FileReader = jsc.WebCore.FileReader;
     // const FIFO = jsc.WebCore.FIFO;
@@ -187,7 +187,7 @@ pub const FilePoll = struct {
         Request,
         // LifecycleScriptSubprocessOutputReader,
         Process,
-        ShellBufferedWriter, // i do not know why, but this has to be here otherwise compiler will complain about dependency loop
+        // bzrt-cut: ShellBufferedWriter
         TerminalPoll,
         ParentDeathWatchdog,
     });
@@ -368,14 +368,7 @@ pub const FilePoll = struct {
             //     var loader = ptr.as(ShellSubprocessCapturedBufferedWriterMini);
             //     loader.onPoll(size_or_offset, 0);
             // },
-            @field(Owner.Tag, @typeName(ShellBufferedWriter)) => {
-                var handler: *ShellBufferedWriter = ptr.as(ShellBufferedWriter);
-                handler.onPoll(size_or_offset, poll.flags.contains(.hup));
-            },
-            @field(Owner.Tag, @typeName(ShellStaticPipeWriter)) => {
-                var handler: *ShellStaticPipeWriter = ptr.as(ShellStaticPipeWriter);
-                handler.onPoll(size_or_offset, poll.flags.contains(.hup));
-            },
+            // bzrt-cut: ShellBufferedWriter / ShellStaticPipeWriter (shell вырезан)
             @field(Owner.Tag, @typeName(StaticPipeWriter)) => {
                 var handler: *StaticPipeWriter = ptr.as(StaticPipeWriter);
                 handler.onPoll(size_or_offset, poll.flags.contains(.hup));
@@ -1288,15 +1281,12 @@ pub const LinuxWaker = struct {
 
     pub fn wait(this: Waker) void {
         var bytes: usize = 0;
-        _ = std.posix.read(this.fd.cast(), @as(*[8]u8, @ptrCast(&bytes))) catch 0;
+        _ = bun.sys.read(this.fd, std.mem.asBytes(&bytes));
     }
 
     pub fn wake(this: *const Waker) void {
         var bytes: usize = 1;
-        _ = std.posix.write(
-            this.fd.cast(),
-            @as(*[8]u8, @ptrCast(&bytes)),
-        ) catch 0;
+        _ = bun.sys.write(this.fd, std.mem.asBytes(&bytes));
     }
 };
 

@@ -334,6 +334,7 @@ pub const Tag = enum(u8) {
 
 pub const Error = @import("./Error.zig");
 pub const PosixStat = @import("./PosixStat.zig").PosixStat;
+pub const KernelStat = @import("./PosixStat.zig").KernelStat;
 
 pub fn Maybe(comptime ReturnTypeT: type) type {
     return bun.api.node.Maybe(ReturnTypeT, Error);
@@ -525,7 +526,7 @@ pub fn stat(path: [:0]const u8) Maybe(bun.Stat) {
         return sys_uv.stat(path);
     } else {
         while (true) {
-            var stat_ = mem.zeroes(bun.Stat);
+            var stat_ = mem.zeroes(KernelStat);
             const rc = if (Environment.isLinux)
                 // aarch64 linux doesn't implement a "stat" syscall. It's all fstatat.
                 linux.syscall4(.fstatat64, @as(usize, @bitCast(@as(isize, std.posix.AT.FDCWD))), @intFromPtr(path.ptr), @intFromPtr(&stat_), 0)
@@ -540,7 +541,7 @@ pub fn stat(path: [:0]const u8) Maybe(bun.Stat) {
                 return err;
             }
 
-            return Maybe(bun.Stat){ .result = stat_ };
+            return Maybe(bun.Stat){ .result = PosixStat.fromKernel(&stat_) };
         }
     }
 }
@@ -577,12 +578,12 @@ pub fn lstat(path: [:0]const u8) Maybe(bun.Stat) {
         return sys_uv.lstat(path);
     } else {
         while (true) {
-            var stat_buf = mem.zeroes(bun.Stat);
+            var stat_buf = mem.zeroes(KernelStat);
             if (Maybe(bun.Stat).errnoSysP(workaround_symbols.lstat(path, &stat_buf), .lstat, path)) |err| {
                 if (err.getErrno() == .INTR) continue;
                 return err;
             }
-            return Maybe(bun.Stat){ .result = stat_buf };
+            return Maybe(bun.Stat){ .result = PosixStat.fromKernel(&stat_buf) };
         }
     }
 }
@@ -596,7 +597,7 @@ pub fn fstat(fd: bun.FD) Maybe(bun.Stat) {
     }
 
     while (true) {
-        var stat_ = mem.zeroes(bun.Stat);
+        var stat_ = mem.zeroes(KernelStat);
 
         const rc = workaround_symbols.fstat(fd.cast(), &stat_);
 
@@ -608,23 +609,25 @@ pub fn fstat(fd: bun.FD) Maybe(bun.Stat) {
             return err;
         }
 
-        return Maybe(bun.Stat){ .result = stat_ };
+        return Maybe(bun.Stat){ .result = PosixStat.fromKernel(&stat_) };
     }
 }
 
+// STATX_* mask constants (0.16 turned them into the linux.STATX packed
+// struct; the numeric values below are the kernel ABI, uapi/linux/stat.h).
 pub const StatxField = enum(u32) {
-    type = linux.STATX_TYPE,
-    mode = linux.STATX_MODE,
-    nlink = linux.STATX_NLINK,
-    uid = linux.STATX_UID,
-    gid = linux.STATX_GID,
-    atime = linux.STATX_ATIME,
-    mtime = linux.STATX_MTIME,
-    ctime = linux.STATX_CTIME,
-    btime = linux.STATX_BTIME,
-    ino = linux.STATX_INO,
-    size = linux.STATX_SIZE,
-    blocks = linux.STATX_BLOCKS,
+    type = @bitCast(linux.STATX{ .TYPE = true }),
+    mode = @bitCast(linux.STATX{ .MODE = true }),
+    nlink = @bitCast(linux.STATX{ .NLINK = true }),
+    uid = @bitCast(linux.STATX{ .UID = true }),
+    gid = @bitCast(linux.STATX{ .GID = true }),
+    atime = @bitCast(linux.STATX{ .ATIME = true }),
+    mtime = @bitCast(linux.STATX{ .MTIME = true }),
+    ctime = @bitCast(linux.STATX{ .CTIME = true }),
+    btime = @bitCast(linux.STATX{ .BTIME = true }),
+    ino = @bitCast(linux.STATX{ .INO = true }),
+    size = @bitCast(linux.STATX{ .SIZE = true }),
+    blocks = @bitCast(linux.STATX{ .BLOCKS = true }),
 };
 
 // Linux Kernel v4.11
@@ -702,7 +705,7 @@ fn statxImpl(fd: bun.FD, path: ?[*:0]const u8, flags: u32, mask: u32) Maybe(Posi
     var buf: linux.Statx = undefined;
 
     while (true) {
-        const rc = linux.statx(@intCast(fd.cast()), if (path) |p| p else "", flags, mask, &buf);
+        const rc = linux.statx(@intCast(fd.cast()), if (path) |p| p else "", flags, @bitCast(mask), &buf);
 
         // On some setups (QEMU user-mode, S390 RHEL docker), statx returns a
         // positive value other than 0 with errno unset — neither a normal
@@ -748,7 +751,7 @@ fn statxImpl(fd: bun.FD, path: ?[*:0]const u8, flags: u32, mask: u32) Maybe(Posi
             .atim = .{ .sec = buf.atime.sec, .nsec = buf.atime.nsec },
             .mtim = .{ .sec = buf.mtime.sec, .nsec = buf.mtime.nsec },
             .ctim = .{ .sec = buf.ctime.sec, .nsec = buf.ctime.nsec },
-            .birthtim = if (buf.mask & linux.STATX_BTIME != 0)
+            .birthtim = if (buf.mask.BTIME)
                 .{ .sec = buf.btime.sec, .nsec = buf.btime.nsec }
             else
                 .{ .sec = 0, .nsec = 0 },
@@ -848,14 +851,14 @@ pub fn fstatat(fd: bun.FD, path: [:0]const u8) Maybe(bun.Stat) {
     }
     const fd_valid = if (fd == bun.invalid_fd) std.posix.AT.FDCWD else fd.native();
     while (true) {
-        var stat_buf = mem.zeroes(bun.Stat);
+        var stat_buf = mem.zeroes(KernelStat);
         if (Maybe(bun.Stat).errnoSysFP(std.os.linux.syscall4(.fstatat64, @as(usize, @bitCast(@as(isize, fd_valid))), @intFromPtr(path.ptr), @intFromPtr(&stat_buf), 0), .fstatat, fd, path)) |err| {
             if (err.getErrno() == .INTR) continue;
             log("fstatat({f}, {s}) = {s}", .{ fd, path, @tagName(err.getErrno()) });
             return err;
         }
         log("fstatat({f}, {s}) = 0", .{ fd, path });
-        return Maybe(bun.Stat){ .result = stat_buf };
+        return Maybe(bun.Stat){ .result = PosixStat.fromKernel(&stat_buf) };
     }
 }
 
@@ -874,14 +877,14 @@ pub fn lstatat(fd: bun.FD, path: [:0]const u8) Maybe(bun.Stat) {
     }
     const fd_valid = if (fd == bun.invalid_fd) std.posix.AT.FDCWD else fd.native();
     while (true) {
-        var stat_buf = mem.zeroes(bun.Stat);
-        if (Maybe(bun.Stat).errnoSysFP(syscall.fstatat(fd_valid, path, &stat_buf, std.posix.AT.SYMLINK_NOFOLLOW), .fstatat, fd, path)) |err| {
+        var stat_buf = mem.zeroes(KernelStat);
+        if (Maybe(bun.Stat).errnoSysFP(std.os.linux.syscall4(.fstatat64, @as(usize, @bitCast(@as(isize, fd_valid))), @intFromPtr(path.ptr), @intFromPtr(&stat_buf), std.posix.AT.SYMLINK_NOFOLLOW), .fstatat, fd, path)) |err| {
             if (err.getErrno() == .INTR) continue;
             log("lstatat({f}, {s}) = {s}", .{ fd, path, @tagName(err.getErrno()) });
             return err;
         }
         log("lstatat({f}, {s}) = 0", .{ fd, path });
-        return Maybe(bun.Stat){ .result = stat_buf };
+        return Maybe(bun.Stat){ .result = PosixStat.fromKernel(&stat_buf) };
     }
 }
 
@@ -3081,7 +3084,7 @@ pub fn mmap(
     offset: u64,
 ) Maybe([]align(page_size_min) u8) {
     const ioffset = @as(i64, @bitCast(offset)); // the OS treats this as unsigned
-    const rc = std.c.mmap(ptr, length, prot, flags, fd.cast(), ioffset);
+    const rc = std.c.mmap(ptr, length, @bitCast(prot), flags, fd.cast(), ioffset);
     const fail = std.c.MAP_FAILED;
     if (rc == fail) {
         return .initErr(.{
@@ -3643,14 +3646,14 @@ fn utimensWithFlags(path: bun.OSPathSliceZ, atime: jsc.Node.TimeLike, mtime: jsc
             .{ .sec = @intCast(mtime.sec), .nsec = mtime.nsec },
         };
         const rc = syscall.utimensat(
-            std.fs.cwd().fd,
+            std.posix.AT.FDCWD,
             path,
             // this var should be a const, the zig type definition is wrong.
             &times,
             flags,
         );
 
-        log("utimensat({d}, atime=({d}, {d}), mtime=({d}, {d})) = {d}", .{ std.fs.cwd().fd, atime.sec, atime.nsec, mtime.sec, mtime.nsec, rc });
+        log("utimensat({d}, atime=({d}, {d}), mtime=({d}, {d})) = {d}", .{ std.posix.AT.FDCWD, atime.sec, atime.nsec, mtime.sec, mtime.nsec, rc });
 
         if (rc == 0) {
             return .success;
@@ -3780,7 +3783,7 @@ pub fn existsAtType(fd: bun.FD, subpath: anytype) Maybe(ExistsAtType) {
 
     return switch (fstatat(fd, subpath)) {
         .err => |err| .{ .err = err },
-        .result => |result| if (S.ISDIR(result.mode)) .{ .result = .directory } else .{ .result = .file },
+        .result => |result| if (S.ISDIR(@intCast(result.mode))) .{ .result = .directory } else .{ .result = .file },
     };
 }
 
@@ -4259,54 +4262,51 @@ export fn Bun__unlink(ptr: [*:0]const u8, len: usize) void {
 
 // TODO: this is wrong on Windows
 
-pub fn lstat_absolute(path: [:0]const u8) !Stat {
+/// Shape of the old std.fs.File.Stat (removed in 0.16) that lstat_absolute
+/// callers still expect.
+pub const AbsoluteStat = struct {
+    inode: u64,
+    size: u64,
+    mode: u64,
+    kind: std.Io.File.Kind,
+    atime: i128,
+    mtime: i128,
+    ctime: i128,
+};
+
+pub fn lstat_absolute(path: [:0]const u8) !AbsoluteStat {
     if (builtin.os.tag == .windows) {
         @compileError("Not implemented yet, consider using lstat()");
     }
 
-    var st = std.mem.zeroes(libc_stat);
-    switch (std.posix.errno(workaround_symbols.lstat(path.ptr, &st))) {
-        .SUCCESS => {},
-        .NOENT => return error.FileNotFound,
-        // .EINVAL => unreachable,
-        .BADF => unreachable, // Always a race condition.
-        .NOMEM => return error.SystemResources,
-        .ACCES => return error.AccessDenied,
-        else => |err| return posix.unexpectedErrno(err),
-    }
-
-    const atime = st.atime();
-    const mtime = st.mtime();
-    const ctime = st.ctime();
-    const Kind = std.fs.File.Kind;
-    return Stat{
-        .inode = st.ino,
-        .size = @as(u64, @bitCast(st.size)),
-        .mode = st.mode,
-        .kind = switch (builtin.os.tag) {
-            .wasi => switch (st.filetype) {
-                posix.FILETYPE_BLOCK_DEVICE => Kind.block_device,
-                posix.FILETYPE_CHARACTER_DEVICE => Kind.character_device,
-                posix.FILETYPE_DIRECTORY => Kind.directory,
-                posix.FILETYPE_SYMBOLIC_LINK => Kind.sym_link,
-                posix.FILETYPE_REGULAR_FILE => Kind.file,
-                posix.FILETYPE_SOCKET_STREAM, posix.FILETYPE_SOCKET_DGRAM => Kind.unix_domain_socket,
-                else => Kind.unknown,
-            },
-            else => switch (st.mode & posix.S.IFMT) {
-                posix.S.IFBLK => Kind.block_device,
-                posix.S.IFCHR => Kind.character_device,
-                posix.S.IFDIR => Kind.directory,
-                posix.S.IFIFO => Kind.named_pipe,
-                posix.S.IFLNK => Kind.sym_link,
-                posix.S.IFREG => Kind.file,
-                posix.S.IFSOCK => Kind.unix_domain_socket,
-                else => Kind.unknown,
-            },
+    const st = switch (lstat(path)) {
+        .result => |st| st,
+        .err => |err| return switch (err.getErrno()) {
+            .NOENT => error.FileNotFound,
+            .NOMEM => error.SystemResources,
+            .ACCES => error.AccessDenied,
+            else => bun.errnoToZigErr(err.errno),
         },
-        .atime = @as(i128, atime.sec) * std.time.ns_per_s + atime.nsec,
-        .mtime = @as(i128, mtime.sec) * std.time.ns_per_s + mtime.nsec,
-        .ctime = @as(i128, ctime.sec) * std.time.ns_per_s + ctime.nsec,
+    };
+
+    const Kind = std.Io.File.Kind;
+    return AbsoluteStat{
+        .inode = st.ino,
+        .size = st.size,
+        .mode = st.mode,
+        .kind = switch (@as(u32, @intCast(st.mode)) & posix.S.IFMT) {
+            posix.S.IFBLK => Kind.block_device,
+            posix.S.IFCHR => Kind.character_device,
+            posix.S.IFDIR => Kind.directory,
+            posix.S.IFIFO => Kind.named_pipe,
+            posix.S.IFLNK => Kind.sym_link,
+            posix.S.IFREG => Kind.file,
+            posix.S.IFSOCK => Kind.unix_domain_socket,
+            else => Kind.unknown,
+        },
+        .atime = @as(i128, st.atim.sec) * std.time.ns_per_s + st.atim.nsec,
+        .mtime = @as(i128, st.mtim.sec) * std.time.ns_per_s + st.mtim.nsec,
+        .ctime = @as(i128, st.ctim.sec) * std.time.ns_per_s + st.ctim.nsec,
     };
 }
 

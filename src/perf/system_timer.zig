@@ -23,5 +23,6 @@ fn NewTimer() type {
 }
 pub const Timer = NewTimer();
 
+const bun = @import("bun");
 const Environment = @import("../bun_core/env.zig");
 const std = @import("std");

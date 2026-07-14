@@ -12,10 +12,10 @@ pub const BunObject = struct {
     // --- Callbacks ---
     pub const allocUnsafe = toJSCallback(Bun.allocUnsafe);
     pub const build = toJSCallback(Bun.JSBundler.buildFn);
-    pub const color = toJSCallback(bun.css.CssColor.jsFunctionColor);
+    pub const color = toJSCallback(cutFeatureCallback); // bzrt-cut: bun.css
     pub const connect = toJSCallback(host_fn.wrapStaticMethod(api.Listener, "connect", false));
-    pub const createParsedShellScript = toJSCallback(bun.shell.ParsedShellScript.createParsedShellScript);
-    pub const createShellInterpreter = toJSCallback(bun.shell.Interpreter.createShellInterpreter);
+    pub const createParsedShellScript = toJSCallback(cutFeatureCallback); // bzrt-cut: bun.shell
+    pub const createShellInterpreter = toJSCallback(cutFeatureCallback); // bzrt-cut: bun.shell
     pub const deflateSync = toJSCallback(JSZlib.deflateSync);
     pub const file = toJSCallback(WebCore.Blob.constructBunFile);
     pub const gunzipSync = toJSCallback(JSZlib.gunzipSync);
@@ -213,30 +213,16 @@ pub const BunObject = struct {
     }
 };
 
+/// bzrt: заглушка для JS-колбэков вырезанных подсистем (css/shell). Бросает
+/// исключение, если код действительно попытается их вызвать в рантайме.
+pub fn cutFeatureCallback(globalThis: *jsc.JSGlobalObject, _: *jsc.CallFrame) bun.JSError!jsc.JSValue {
+    return globalThis.throw("This Bun API is not available in the bzrt runtime.", .{});
+}
+
 pub fn shellEscape(globalThis: *jsc.JSGlobalObject, callframe: *jsc.CallFrame) bun.JSError!jsc.JSValue {
-    const arguments = callframe.arguments_old(1);
-    if (arguments.len < 1) {
-        return globalThis.throw("shell escape expected at least 1 argument", .{});
-    }
-
-    const jsval = arguments.ptr[0];
-    const bunstr = try jsval.toBunString(globalThis);
-    if (globalThis.hasException()) return .zero;
-    defer bunstr.deref();
-
-    var outbuf = std.array_list.Managed(u8).init(bun.default_allocator);
-    defer outbuf.deinit();
-
-    if (bun.shell.needsEscapeBunstr(bunstr)) {
-        const result = try bun.shell.escapeBunStr(bunstr, &outbuf, true);
-        if (!result) {
-            return globalThis.throw("String has invalid utf-16: {s}", .{bunstr.byteSlice()});
-        }
-        var str = bun.String.cloneUTF8(outbuf.items[0..]);
-        return str.transferToJS(globalThis);
-    }
-
-    return jsval;
+    // bzrt-cut: bun.shell вырезан.
+    _ = callframe;
+    return globalThis.throw("Bun.$ (shell) is not available in the bzrt runtime.", .{});
 }
 
 pub fn braces(global: *jsc.JSGlobalObject, brace_str: bun.String, opts: gen.BracesOptions) bun.JSError!jsc.JSValue {

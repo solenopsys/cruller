@@ -3577,7 +3577,7 @@ pub const NodeFS = struct {
                     .err => |err| return Maybe(Return.CopyFile){ .err = err.withPath(src) },
                 };
 
-                if (!posix.S.ISREG(stat_.mode)) {
+                if (!posix.S.ISREG(@intCast(stat_.mode))) {
                     return Maybe(Return.CopyFile){ .err = .{
                         .errno = @intFromEnum(SystemErrno.ENOTSUP),
                         .syscall = .copyfile,
@@ -3617,7 +3617,7 @@ pub const NodeFS = struct {
                     };
                     defer {
                         _ = Syscall.ftruncate(dest_fd, @as(std.c.off_t, @intCast(@as(u63, @truncate(wrote)))));
-                        _ = Syscall.fchmod(dest_fd, stat_.mode);
+                        _ = Syscall.fchmod(dest_fd, @intCast(stat_.mode));
                         dest_fd.close();
                     }
 
@@ -3656,7 +3656,7 @@ pub const NodeFS = struct {
                 .result => |result| result,
                 .err => |err| return Maybe(Return.CopyFile){ .err = err },
             };
-            if (!posix.S.ISREG(stat_.mode)) {
+            if (!posix.S.ISREG(@intCast(stat_.mode))) {
                 return Maybe(Return.CopyFile){ .err = .{ .errno = @intFromEnum(SystemErrno.EOPNOTSUPP), .syscall = .copyfile } };
             }
 
@@ -3687,7 +3687,7 @@ pub const NodeFS = struct {
                 const rc = std.c.copy_file_range(src_fd.native(), null, dest_fd.native(), null, std.math.maxInt(i32) - 1, 0);
                 switch (bun.sys.getErrno(rc)) {
                     .SUCCESS => if (rc == 0) {
-                        _ = Syscall.fchmod(dest_fd, stat_.mode);
+                        _ = Syscall.fchmod(dest_fd, @intCast(stat_.mode));
                         return ret.success;
                     },
                     .INTR => continue,
@@ -3704,7 +3704,7 @@ pub const NodeFS = struct {
                 _ = bun.sys.unlink(dest);
                 return Maybe(Return.CopyFile){ .err = err };
             }
-            _ = Syscall.fchmod(dest_fd, stat_.mode);
+            _ = Syscall.fchmod(dest_fd, @intCast(stat_.mode));
             return ret.success;
         }
 
@@ -3727,7 +3727,7 @@ pub const NodeFS = struct {
                 .err => |err| return Maybe(Return.CopyFile){ .err = err },
             };
 
-            if (!posix.S.ISREG(stat_.mode)) {
+            if (!posix.S.ISREG(@intCast(stat_.mode))) {
                 return Maybe(Return.CopyFile){ .err = .{ .errno = @intFromEnum(SystemErrno.ENOTSUP), .syscall = .copyfile } };
             }
 
@@ -3752,7 +3752,7 @@ pub const NodeFS = struct {
                     _ = bun.sys.unlink(dest);
                     return err;
                 }
-                _ = Syscall.fchmod(dest_fd, stat_.mode);
+                _ = Syscall.fchmod(dest_fd, @intCast(stat_.mode));
                 dest_fd.close();
                 return ret.success;
             }
@@ -3761,7 +3761,7 @@ pub const NodeFS = struct {
             if (posix.S.ISREG(stat_.mode) and bun.can_use_ioctl_ficlone()) {
                 const rc = bun.linux.ioctl_ficlone(dest_fd, src_fd);
                 if (rc == 0) {
-                    _ = Syscall.fchmod(dest_fd, stat_.mode);
+                    _ = Syscall.fchmod(dest_fd, @intCast(stat_.mode));
                     dest_fd.close();
                     return ret.success;
                 }
@@ -5728,7 +5728,7 @@ pub const NodeFS = struct {
 
     pub fn rmdir(this: *NodeFS, args: Arguments.RmDir, _: Flavor) Maybe(Return.Rmdir) {
         if (args.recursive) {
-            zigDeleteTree(std.fs.cwd(), args.path.slice(), .directory) catch |err| {
+            zigDeleteTree(std.Io.Dir.cwd(), args.path.slice(), .directory) catch |err| {
                 var errno: bun.sys.E = switch (@as(anyerror, err)) {
                     error.AccessDenied => .PERM,
                     error.FileTooBig => .FBIG,
@@ -5784,7 +5784,7 @@ pub const NodeFS = struct {
 
         // We cannot use removefileat() on macOS because it does not handle write-protected files as expected.
         if (args.recursive) {
-            zigDeleteTree(std.fs.cwd(), args.path.slice(), .file) catch |err| {
+            zigDeleteTree(std.Io.Dir.cwd(), args.path.slice(), .file) catch |err| {
                 bun.handleErrorReturnTrace(err, @errorReturnTrace());
                 const errno: E = switch (@as(anyerror, err)) {
                     // error.InvalidHandle => .BADF,
@@ -5830,67 +5830,31 @@ pub const NodeFS = struct {
 
         const dest = args.path.sliceZ(&this.sync_error_buf);
 
-        std.posix.unlinkZ(dest) catch |err1| {
-            bun.handleErrorReturnTrace(err1, @errorReturnTrace());
+        if (bun.sys.unlink(dest).asErr()) |err1| {
             // empircally, it seems to return AccessDenied when the
             // file is actually a directory on macOS.
             if (args.recursive and
-                (err1 == error.IsDir or err1 == error.NotDir or err1 == error.AccessDenied))
+                (err1.getErrno() == .ISDIR or err1.getErrno() == .NOTDIR or err1.getErrno() == .ACCES))
             {
-                std.posix.rmdirZ(dest) catch |err2| {
-                    bun.handleErrorReturnTrace(err2, @errorReturnTrace());
-                    const code: E = switch (err2) {
-                        error.AccessDenied => .ACCES,
-                        error.SymLinkLoop => .LOOP,
-                        error.NameTooLong => .NAMETOOLONG,
-                        error.SystemResources => .NOMEM,
-                        error.ReadOnlyFileSystem => .ROFS,
-                        error.FileBusy => .BUSY,
-                        error.FileNotFound => brk: {
-                            if (args.force) {
-                                return .success;
-                            }
-                            break :brk .NOENT;
-                        },
-                        error.InvalidUtf8 => .INVAL,
-                        error.InvalidWtf8 => .INVAL,
-                        error.BadPathName => .INVAL,
-                        else => .FAULT,
-                    };
-
+                if (bun.sys.rmdir(dest).asErr()) |err2| {
+                    if (err2.getErrno() == .NOENT and args.force) {
+                        return .success;
+                    }
                     return .{
-                        .err = bun.sys.Error.fromCode(code, .rm).withPath(args.path.slice()),
+                        .err = err2.withPath(args.path.slice()),
                     };
-                };
+                }
 
                 return .success;
             }
 
-            {
-                const code: E = switch (err1) {
-                    error.AccessDenied => .ACCES,
-                    error.SymLinkLoop => .LOOP,
-                    error.NameTooLong => .NAMETOOLONG,
-                    error.SystemResources => .NOMEM,
-                    error.ReadOnlyFileSystem => .ROFS,
-                    error.FileBusy => .BUSY,
-                    error.InvalidUtf8 => .INVAL,
-                    error.InvalidWtf8 => .INVAL,
-                    error.BadPathName => .INVAL,
-                    error.FileNotFound => brk: {
-                        if (args.force) {
-                            return .success;
-                        }
-                        break :brk .NOENT;
-                    },
-                    else => .FAULT,
-                };
-
-                return .{
-                    .err = bun.sys.Error.fromCode(code, .rm).withPath(args.path.slice()),
-                };
+            if (err1.getErrno() == .NOENT and args.force) {
+                return .success;
             }
-        };
+            return .{
+                .err = err1.withPath(args.path.slice()),
+            };
+        }
 
         return .success;
     }
@@ -6232,7 +6196,7 @@ pub const NodeFS = struct {
                 },
             };
 
-            if (!posix.S.ISDIR(stat_.mode)) {
+            if (!posix.S.ISDIR(@intCast(stat_.mode))) {
                 const r = this._copySingleFileSync(
                     src,
                     dest,
@@ -6458,7 +6422,7 @@ pub const NodeFS = struct {
         dest: bun.OSPathSliceZ,
         mode: constants.Copyfile,
         /// Stat on posix, file attributes on windows
-        reuse_stat: ?if (Environment.isWindows) windows.DWORD else std.posix.Stat,
+        reuse_stat: ?if (Environment.isWindows) windows.DWORD else bun.Stat,
         args: Arguments.Cp,
     ) Maybe(Return.CopyFile) {
         const ret = Maybe(Return.CopyFile);
@@ -6477,7 +6441,7 @@ pub const NodeFS = struct {
                     },
                 };
 
-                if (!posix.S.ISREG(stat_.mode)) {
+                if (!posix.S.ISREG(@intCast(stat_.mode))) {
                     if (posix.S.ISLNK(stat_.mode)) {
                         var mode_: u32 = c.COPYFILE_ACL | c.COPYFILE_DATA | c.COPYFILE_NOFOLLOW_SRC;
                         if (mode.shouldntOverwrite()) {
@@ -6555,7 +6519,7 @@ pub const NodeFS = struct {
                     };
                     defer {
                         _ = Syscall.ftruncate(dest_fd, @intCast(@as(u63, @truncate(wrote))));
-                        _ = Syscall.fchmod(dest_fd, stat_.mode);
+                        _ = Syscall.fchmod(dest_fd, @intCast(stat_.mode));
                         dest_fd.close();
                     }
 
@@ -6606,7 +6570,7 @@ pub const NodeFS = struct {
                 .err => |err| return Maybe(Return.CopyFile){ .err = err.withFd(src_fd) },
             };
 
-            if (!posix.S.ISREG(stat_.mode)) {
+            if (!posix.S.ISREG(@intCast(stat_.mode))) {
                 return Maybe(Return.CopyFile){ .err = .{
                     .errno = @intFromEnum(SystemErrno.ENOTSUP),
                     .syscall = .copyfile,
@@ -6651,10 +6615,10 @@ pub const NodeFS = struct {
 
             var size: usize = @intCast(@max(stat_.size, 0));
 
-            if (posix.S.ISREG(stat_.mode) and bun.can_use_ioctl_ficlone()) {
+            if (posix.S.ISREG(@intCast(stat_.mode)) and bun.can_use_ioctl_ficlone()) {
                 const rc = bun.linux.ioctl_ficlone(dest_fd, src_fd);
                 if (rc == 0) {
-                    _ = Syscall.fchmod(dest_fd, stat_.mode);
+                    _ = Syscall.fchmod(dest_fd, @intCast(stat_.mode));
                     dest_fd.close();
                     return ret.success;
                 }
@@ -6664,7 +6628,7 @@ pub const NodeFS = struct {
 
             defer {
                 _ = Syscall.ftruncate(dest_fd, @as(i64, @intCast(@as(u63, @truncate(wrote)))));
-                _ = Syscall.fchmod(dest_fd, stat_.mode);
+                _ = Syscall.fchmod(dest_fd, @intCast(stat_.mode));
                 dest_fd.close();
             }
 
@@ -6753,7 +6717,7 @@ pub const NodeFS = struct {
                 .result => |result| result,
                 .err => |err| return Maybe(Return.CopyFile){ .err = err.withFd(src_fd) },
             };
-            if (!posix.S.ISREG(stat_.mode)) {
+            if (!posix.S.ISREG(@intCast(stat_.mode))) {
                 return Maybe(Return.CopyFile){ .err = .{ .errno = @intFromEnum(SystemErrno.EOPNOTSUPP), .syscall = .copyfile } };
             }
 
@@ -6802,7 +6766,7 @@ pub const NodeFS = struct {
 
             defer {
                 _ = Syscall.ftruncate(dest_fd, @as(i64, @intCast(@as(u63, @truncate(wrote)))));
-                _ = Syscall.fchmod(dest_fd, stat_.mode);
+                _ = Syscall.fchmod(dest_fd, @intCast(stat_.mode));
                 dest_fd.close();
             }
 
@@ -6926,375 +6890,24 @@ comptime {
     _ = Bun__mkdirp;
 }
 
-/// Copied from std.fs.Dir.deleteTree. This function returns `FileNotFound` instead of ignoring it, which
-/// is required to match the behavior of Node.js's `fs.rm` { recursive: true, force: false }.
-pub fn zigDeleteTree(self: std.fs.Dir, sub_path: []const u8, kind_hint: std.fs.File.Kind) !void {
-    var initial_iterable_dir = (try zigDeleteTreeOpenInitialSubpath(self, sub_path, kind_hint)) orelse return;
+/// Node's fs.rm{recursive:true, force:false} must report ENOENT for a missing
+/// root, while std.Io.Dir.deleteTree swallows it — so probe the root first
+/// (lstat semantics: a dangling symlink still counts as existing).
+pub fn zigDeleteTree(self: std.Io.Dir, sub_path: []const u8, kind_hint: std.Io.File.Kind) !void {
+    _ = kind_hint;
 
-    const StackItem = struct {
-        name: []const u8,
-        parent_dir: std.fs.Dir,
-        iter: std.fs.Dir.Iterator,
+    var path_buf: bun.PathBuffer = undefined;
+    if (sub_path.len >= path_buf.len) return error.NameTooLong;
+    @memcpy(path_buf[0..sub_path.len], sub_path);
+    path_buf[sub_path.len] = 0;
+    const sub_path_z: [:0]const u8 = path_buf[0..sub_path.len :0];
 
-        fn closeAll(items: []@This()) void {
-            for (items) |*item| item.iter.dir.close();
-        }
-    };
-
-    var stack_buffer: [16]StackItem = undefined;
-    var stack = std.ArrayListUnmanaged(StackItem).initBuffer(&stack_buffer);
-    defer StackItem.closeAll(stack.items);
-
-    stack.appendAssumeCapacity(.{
-        .name = sub_path,
-        .parent_dir = self,
-        .iter = initial_iterable_dir.iterateAssumeFirstIteration(),
-    });
-
-    process_stack: while (stack.items.len != 0) {
-        var top = &stack.items[stack.items.len - 1];
-        while (try top.iter.next()) |entry| {
-            var treat_as_dir = entry.kind == .directory;
-            handle_entry: while (true) {
-                if (treat_as_dir) {
-                    if (stack.unusedCapacitySlice().len >= 1) {
-                        var iterable_dir = top.iter.dir.openDir(entry.name, .{
-                            .no_follow = true,
-                            .iterate = true,
-                        }) catch |err| switch (err) {
-                            error.NotDir => {
-                                treat_as_dir = false;
-                                continue :handle_entry;
-                            },
-                            error.FileNotFound,
-                            error.AccessDenied,
-                            error.PermissionDenied,
-                            error.ProcessNotFound,
-                            error.SymLinkLoop,
-                            error.ProcessFdQuotaExceeded,
-                            error.NameTooLong,
-                            error.SystemFdQuotaExceeded,
-                            error.NoDevice,
-                            error.SystemResources,
-                            error.Unexpected,
-                            error.InvalidUtf8,
-                            error.InvalidWtf8,
-                            error.BadPathName,
-                            error.NetworkNotFound,
-                            error.DeviceBusy,
-                            => |e| return e,
-                        };
-                        stack.appendAssumeCapacity(.{
-                            .name = entry.name,
-                            .parent_dir = top.iter.dir,
-                            .iter = iterable_dir.iterateAssumeFirstIteration(),
-                        });
-                        continue :process_stack;
-                    } else {
-                        try zigDeleteTreeMinStackSizeWithKindHint(top.iter.dir, entry.name, entry.kind);
-                        break :handle_entry;
-                    }
-                } else {
-                    if (top.iter.dir.deleteFile(entry.name)) {
-                        break :handle_entry;
-                    } else |err| switch (err) {
-                        error.IsDir => {
-                            treat_as_dir = true;
-                            continue :handle_entry;
-                        },
-
-                        error.FileNotFound,
-                        error.NotDir,
-                        error.AccessDenied,
-                        error.PermissionDenied,
-                        error.InvalidUtf8,
-                        error.InvalidWtf8,
-                        error.SymLinkLoop,
-                        error.NameTooLong,
-                        error.SystemResources,
-                        error.ReadOnlyFileSystem,
-                        error.FileSystem,
-                        error.FileBusy,
-                        error.BadPathName,
-                        error.NetworkNotFound,
-                        error.Unexpected,
-                        => |e| return e,
-                    }
-                }
-            }
-        }
-
-        // On Windows, we can't delete until the dir's handle has been closed, so
-        // close it before we try to delete.
-        top.iter.dir.close();
-
-        // In order to avoid double-closing the directory when cleaning up
-        // the stack in the case of an error, we save the relevant portions and
-        // pop the value from the stack.
-        const parent_dir = top.parent_dir;
-        const name = top.name;
-        stack.items.len -= 1;
-
-        var need_to_retry: bool = false;
-        parent_dir.deleteDir(name) catch |err| switch (err) {
-            error.FileNotFound => {},
-            error.DirNotEmpty => need_to_retry = true,
-            else => |e| return e,
-        };
-
-        if (need_to_retry) {
-            // Since we closed the handle that the previous iterator used, we
-            // need to re-open the dir and re-create the iterator.
-            var iterable_dir = iterable_dir: {
-                var treat_as_dir = true;
-                handle_entry: while (true) {
-                    if (treat_as_dir) {
-                        break :iterable_dir parent_dir.openDir(name, .{
-                            .no_follow = true,
-                            .iterate = true,
-                        }) catch |err| switch (err) {
-                            error.NotDir => {
-                                treat_as_dir = false;
-                                continue :handle_entry;
-                            },
-                            error.FileNotFound => {
-                                // That's fine, we were trying to remove this directory anyway.
-                                continue :process_stack;
-                            },
-
-                            error.AccessDenied,
-                            error.PermissionDenied,
-                            error.ProcessNotFound,
-                            error.SymLinkLoop,
-                            error.ProcessFdQuotaExceeded,
-                            error.NameTooLong,
-                            error.SystemFdQuotaExceeded,
-                            error.NoDevice,
-                            error.SystemResources,
-                            error.Unexpected,
-                            error.InvalidUtf8,
-                            error.InvalidWtf8,
-                            error.BadPathName,
-                            error.NetworkNotFound,
-                            error.DeviceBusy,
-                            => |e| return e,
-                        };
-                    } else {
-                        if (parent_dir.deleteFile(name)) {
-                            continue :process_stack;
-                        } else |err| switch (err) {
-                            error.FileNotFound => continue :process_stack,
-                            error.NotDir => if (Environment.isDebug) unreachable else return error.Unexpected,
-                            error.IsDir => {
-                                treat_as_dir = true;
-                                continue :handle_entry;
-                            },
-
-                            error.AccessDenied,
-                            error.PermissionDenied,
-                            error.InvalidUtf8,
-                            error.InvalidWtf8,
-                            error.SymLinkLoop,
-                            error.NameTooLong,
-                            error.SystemResources,
-                            error.ReadOnlyFileSystem,
-                            error.FileSystem,
-                            error.FileBusy,
-                            error.BadPathName,
-                            error.NetworkNotFound,
-                            error.Unexpected,
-                            => |e| return e,
-                        }
-                    }
-                }
-            };
-            // We know there is room on the stack since we are just re-adding
-            // the StackItem that we previously popped.
-            stack.appendAssumeCapacity(.{
-                .name = name,
-                .parent_dir = parent_dir,
-                .iter = iterable_dir.iterateAssumeFirstIteration(),
-            });
-            continue :process_stack;
-        }
+    switch (bun.sys.lstatat(.fromNative(self.handle), sub_path_z)) {
+        .err => |err| if (err.getErrno() == .NOENT) return error.FileNotFound,
+        .result => {},
     }
-}
 
-fn zigDeleteTreeOpenInitialSubpath(self: std.fs.Dir, sub_path: []const u8, kind_hint: std.fs.File.Kind) !?std.fs.Dir {
-    return iterable_dir: {
-        // Treat as a file by default
-        var treat_as_dir = kind_hint == .directory;
-
-        handle_entry: while (true) {
-            if (treat_as_dir) {
-                break :iterable_dir self.openDir(sub_path, .{
-                    .no_follow = true,
-                    .iterate = true,
-                }) catch |err| switch (err) {
-                    error.NotDir,
-                    error.FileNotFound,
-                    error.AccessDenied,
-                    error.PermissionDenied,
-                    error.ProcessNotFound,
-                    error.SymLinkLoop,
-                    error.ProcessFdQuotaExceeded,
-                    error.NameTooLong,
-                    error.SystemFdQuotaExceeded,
-                    error.NoDevice,
-                    error.SystemResources,
-                    error.Unexpected,
-                    error.InvalidUtf8,
-                    error.InvalidWtf8,
-                    error.BadPathName,
-                    error.DeviceBusy,
-                    error.NetworkNotFound,
-                    => |e| return e,
-                };
-            } else {
-                if (self.deleteFile(sub_path)) {
-                    return null;
-                } else |err| switch (err) {
-                    error.IsDir => {
-                        treat_as_dir = true;
-                        continue :handle_entry;
-                    },
-
-                    error.FileNotFound,
-                    error.AccessDenied,
-                    error.PermissionDenied,
-                    error.InvalidUtf8,
-                    error.InvalidWtf8,
-                    error.SymLinkLoop,
-                    error.NameTooLong,
-                    error.SystemResources,
-                    error.ReadOnlyFileSystem,
-                    error.NotDir,
-                    error.FileSystem,
-                    error.FileBusy,
-                    error.BadPathName,
-                    error.NetworkNotFound,
-                    error.Unexpected,
-                    => |e| return e,
-                }
-            }
-        }
-    };
-}
-
-fn zigDeleteTreeMinStackSizeWithKindHint(self: std.fs.Dir, sub_path: []const u8, kind_hint: std.fs.File.Kind) !void {
-    start_over: while (true) {
-        var dir = (try zigDeleteTreeOpenInitialSubpath(self, sub_path, kind_hint)) orelse return;
-        var cleanup_dir_parent: ?std.fs.Dir = null;
-        defer if (cleanup_dir_parent) |*d| d.close();
-
-        var cleanup_dir = true;
-        defer if (cleanup_dir) dir.close();
-
-        // Valid use of MAX_PATH_BYTES because dir_name_buf will only
-        // ever store a single path component that was returned from the
-        // filesystem.
-        var dir_name_buf: [std.fs.max_path_bytes]u8 = undefined;
-        var dir_name: []const u8 = sub_path;
-
-        // Here we must avoid recursion, in order to provide O(1) memory guarantee of this function.
-        // Go through each entry and if it is not a directory, delete it. If it is a directory,
-        // open it, and close the original directory. Repeat. Then start the entire operation over.
-
-        scan_dir: while (true) {
-            var dir_it = dir.iterateAssumeFirstIteration();
-            dir_it: while (try dir_it.next()) |entry| {
-                var treat_as_dir = entry.kind == .directory;
-                handle_entry: while (true) {
-                    if (treat_as_dir) {
-                        const new_dir = dir.openDir(entry.name, .{
-                            .no_follow = true,
-                            .iterate = true,
-                        }) catch |err| switch (err) {
-                            error.NotDir => {
-                                treat_as_dir = false;
-                                continue :handle_entry;
-                            },
-                            error.FileNotFound => {
-                                // That's fine, we were trying to remove this directory anyway.
-                                continue :dir_it;
-                            },
-
-                            error.AccessDenied,
-                            error.PermissionDenied,
-                            error.ProcessNotFound,
-                            error.SymLinkLoop,
-                            error.ProcessFdQuotaExceeded,
-                            error.NameTooLong,
-                            error.SystemFdQuotaExceeded,
-                            error.NoDevice,
-                            error.SystemResources,
-                            error.Unexpected,
-                            error.InvalidUtf8,
-                            error.InvalidWtf8,
-                            error.BadPathName,
-                            error.NetworkNotFound,
-                            error.DeviceBusy,
-                            => |e| return e,
-                        };
-                        if (cleanup_dir_parent) |*d| d.close();
-                        cleanup_dir_parent = dir;
-                        dir = new_dir;
-                        const result = dir_name_buf[0..entry.name.len];
-                        @memcpy(result, entry.name);
-                        dir_name = result;
-                        continue :scan_dir;
-                    } else {
-                        if (dir.deleteFile(entry.name)) {
-                            continue :dir_it;
-                        } else |err| switch (err) {
-                            error.FileNotFound => continue :dir_it,
-                            error.NotDir => if (Environment.isDebug) unreachable else return error.Unexpected,
-
-                            error.IsDir => {
-                                treat_as_dir = true;
-                                continue :handle_entry;
-                            },
-
-                            error.AccessDenied,
-                            error.PermissionDenied,
-                            error.InvalidUtf8,
-                            error.InvalidWtf8,
-                            error.SymLinkLoop,
-                            error.NameTooLong,
-                            error.SystemResources,
-                            error.ReadOnlyFileSystem,
-                            error.FileSystem,
-                            error.FileBusy,
-                            error.BadPathName,
-                            error.NetworkNotFound,
-                            error.Unexpected,
-                            => |e| return e,
-                        }
-                    }
-                }
-            }
-            // Reached the end of the directory entries, which means we successfully deleted all of them.
-            // Now to remove the directory itself.
-            dir.close();
-            cleanup_dir = false;
-
-            if (cleanup_dir_parent) |d| {
-                d.deleteDir(dir_name) catch |err| switch (err) {
-                    // These two things can happen due to file system race conditions.
-                    error.FileNotFound, error.DirNotEmpty => continue :start_over,
-                    else => |e| return e,
-                };
-                continue :start_over;
-            } else {
-                self.deleteDir(sub_path) catch |err| switch (err) {
-                    error.FileNotFound => return,
-                    error.DirNotEmpty => continue :start_over,
-                    else => |e| return e,
-                };
-                return;
-            }
-        }
-    }
+    try self.deleteTree(bun.compat.io(), sub_path);
 }
 
 const Syscall = if (Environment.isWindows) bun.sys.sys_uv else bun.sys;

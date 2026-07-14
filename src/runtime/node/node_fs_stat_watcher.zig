@@ -127,8 +127,8 @@ pub const StatWatcherScheduler = struct {
         var this: *StatWatcherScheduler = @alignCast(@fieldParentPtr("task", task));
         // ref'd when the timer was scheduled
         defer this.deref();
-        // Instant.now will not fail on our target platforms.
-        const now = std.time.Instant.now() catch unreachable;
+        // Monotonic nanoseconds (std.time.Instant removed in 0.16).
+        const now = bun.timespec.now(.force_real_time).ns();
 
         var batch = this.watchers.popBatch();
         log("pop batch of {d} watchers", .{batch.count});
@@ -143,7 +143,7 @@ pub const StatWatcherScheduler = struct {
             }
             contain_watchers = true;
 
-            const time_since = now.since(watcher.last_check);
+            const time_since = now -| watcher.last_check;
             const interval = @as(u64, @intCast(watcher.interval)) * 1_000_000;
 
             if (time_since >= interval -| 500) {
@@ -183,7 +183,7 @@ pub const StatWatcher = struct {
     persistent: bool,
     bigint: bool,
     interval: i32,
-    last_check: std.time.Instant,
+    last_check: u64,
 
     globalThis: *jsc.JSGlobalObject,
 
@@ -533,8 +533,7 @@ pub const StatWatcher = struct {
             .this_value = .empty(),
             .closed = false,
             .path = alloc_file_path,
-            // Instant.now will not fail on our target platforms.
-            .last_check = std.time.Instant.now() catch unreachable,
+            .last_check = bun.timespec.now(.force_real_time).ns(),
             // InitStatTask is responsible for setting this
             .priv_last_stat = .init(std.mem.zeroes(bun.sys.PosixStat)),
             .scheduler = vm.rareData().nodeFSStatWatcherScheduler(vm),

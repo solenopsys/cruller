@@ -267,7 +267,7 @@ pub const PasswordObject = struct {
     ) HashError!bool {
         switch (algorithm) {
             .argon2id, .argon2d, .argon2i => {
-                pwhash.argon2.strVerify(previous_hash, password, .{ .allocator = allocator }) catch |err| {
+                pwhash.argon2.strVerify(previous_hash, password, .{ .allocator = allocator }, bun.compat.io()) catch |err| {
                     if (err == error.PasswordVerificationFailed) {
                         return false;
                     }

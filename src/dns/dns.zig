@@ -262,7 +262,7 @@ pub fn addressToString(address: *const bun.compat.NetAddress) bun.OOM!bun.String
             return String.cloneLatin1(out[1 .. out.len - 1 - std.fmt.count("{d}", .{address.in6.getPort()}) - 1]);
         },
         std.posix.AF.UNIX => {
-            if (comptime std.net.has_unix_sockets) {
+            if (comptime @hasField(bun.compat.NetAddress, "un")) {
                 return String.cloneLatin1(&address.un.path);
             }
 

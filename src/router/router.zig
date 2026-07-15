@@ -560,7 +560,7 @@ pub const Route = struct {
     pub const index_route_name: string = "/";
     const route_bufs = bun.ThreadlocalBuffers(struct {
         route_file_buf: bun.PathBuffer = undefined,
-        normalized_abs_path_buf: bun.windows.PathBuffer = undefined,
+        normalized_abs_path_buf: bun.PathBuffer = undefined,
     });
 
     pub const Sorter = struct {
@@ -732,9 +732,9 @@ pub const Route = struct {
         }
 
         if (abs_path_str.len == 0) {
-            var file: std.fs.File = undefined;
+            var file: std.Io.File = undefined;
             var needs_close = true;
-            defer if (needs_close) file.close();
+            defer if (needs_close) file.close(bun.compat.io());
             if (entry.cache.fd.unwrapValid()) |valid| {
                 file = valid.stdFile();
                 needs_close = false;
@@ -743,7 +743,7 @@ pub const Route = struct {
                 abs_path_str = FileSystem.instance.absBuf(&parts, route_file_buf);
                 route_file_buf[abs_path_str.len] = 0;
                 const buf = route_file_buf[0..abs_path_str.len :0];
-                file = std.fs.openFileAbsoluteZ(buf, .{ .mode = .read_only }) catch |err| {
+                file = std.Io.Dir.openFileAbsolute(bun.compat.io(), buf, .{ .mode = .read_only }) catch |err| {
                     needs_close = false;
                     log.addErrorFmt(null, Logger.Loc.Empty, allocator, "{s} opening route: {s}", .{ @errorName(err), abs_path_str }) catch unreachable;
                     return null;

@@ -811,7 +811,9 @@ pub const FileSystem = struct {
                 // Don't lower the hard limit (Node only touches rlim_cur). The @max
                 // is for the musl branch above, which may raise past the current hard.
                 raised.max = @max(lim.max, target);
-                if (std.posix.setrlimit(resource, raised)) |_| lim.cur = raised.cur else {}
+                if (std.posix.setrlimit(resource, raised)) |_| {
+                    lim.cur = raised.cur;
+                } else |_| {}
             }
 
             Limit.handles = @intCast(lim.cur);
@@ -941,7 +943,7 @@ pub const FileSystem = struct {
             pub const Map = allocators.BSSMap(EntriesOption, Preallocate.Counts.dir_entry, false, 256, true);
         };
 
-        pub fn openDir(_: *RealFS, unsafe_dir_string: string) !std.fs.Dir {
+        pub fn openDir(_: *RealFS, unsafe_dir_string: string) !std.Io.Dir {
             const dirfd = if (Environment.isWindows)
                 bun.sys.openDirAtWindowsA(bun.invalid_fd, unsafe_dir_string, .{ .iterable = true, .no_follow = false, .read_only = true })
             else
@@ -960,7 +962,7 @@ pub const FileSystem = struct {
             prev_map: ?*DirEntry.EntryMap,
             _dir: string,
             generation: bun.Generation,
-            handle: std.fs.Dir,
+            handle: std.Io.Dir,
             comptime Iterator: type,
             iterator: Iterator,
         ) !DirEntry {
@@ -972,7 +974,7 @@ pub const FileSystem = struct {
             errdefer dir.deinit(allocator);
 
             if (store_fd) {
-                FileSystem.setMaxFd(handle.fd);
+                FileSystem.setMaxFd(handle.handle);
                 dir.fd = .fromStdDir(handle);
             }
 
@@ -982,7 +984,7 @@ pub const FileSystem = struct {
                 try dir.addEntry(prev_map, _entry, allocator, Iterator, iterator);
             }
 
-            debug("readdir({f}, {s}) = {d}", .{ printHandle(handle.fd), _dir, dir.data.count() });
+            debug("readdir({f}, {s}) = {d}", .{ printHandle(handle.handle), _dir, dir.data.count() });
 
             return dir;
         }
@@ -1019,7 +1021,7 @@ pub const FileSystem = struct {
         pub fn readDirectory(
             fs: *RealFS,
             _dir: string,
-            _handle: ?std.fs.Dir,
+            _handle: ?std.Io.Dir,
             generation: bun.Generation,
             store_fd: bool,
         ) !*EntriesOption {
@@ -1039,7 +1041,7 @@ pub const FileSystem = struct {
         pub fn readDirectoryWithIterator(
             fs: *RealFS,
             dir_maybe_trail_slash: string,
-            maybe_handle: ?std.fs.Dir,
+            maybe_handle: ?std.Io.Dir,
             generation: bun.Generation,
             store_fd: bool,
             comptime Iterator: type,
@@ -1084,7 +1086,7 @@ pub const FileSystem = struct {
 
             defer {
                 if (maybe_handle == null and (!store_fd or fs.needToCloseFiles())) {
-                    handle.close();
+                    handle.close(bun.compat.io());
                 }
             }
 
@@ -1468,7 +1470,7 @@ pub const FileSystem = struct {
                         cache.fd = file;
                     }
                 }
-                const file_stat = try file.stdFile().stat();
+                const file_stat = try file.stdFile().stat(bun.compat.io());
                 symlink = try file.getFdPath(&outpath);
                 file_kind = file_stat.kind;
             }

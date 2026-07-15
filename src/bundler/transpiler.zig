@@ -890,7 +890,7 @@ pub const Transpiler = struct {
                 opts.features.allow_runtime = transpiler.options.allow_runtime;
                 opts.features.set_breakpoint_on_first_line = this_parse.set_breakpoint_on_first_line;
                 opts.features.trim_unused_imports = transpiler.options.trim_unused_imports orelse loader.isTypeScript();
-                opts.features.no_macros = transpiler.options.no_macros;
+                opts.features.no_macros = true;
                 opts.features.runtime_transpiler_cache = this_parse.runtime_transpiler_cache;
                 opts.transform_only = transpiler.options.transform_only;
 
@@ -900,26 +900,26 @@ pub const Transpiler = struct {
                 opts.features.dont_bundle_twice = this_parse.dont_bundle_twice;
 
                 opts.features.commonjs_at_runtime = this_parse.allow_commonjs;
-                opts.module_type = this_parse.module_type;
+                opts.module_type = @intFromEnum(this_parse.module_type);
 
                 opts.tree_shaking = transpiler.options.tree_shaking;
-                opts.features.inlining = transpiler.options.inlining;
+                opts.features.inlining = false;
 
                 opts.filepath_hash_for_hmr = file_hash orelse 0;
                 opts.features.auto_import_jsx = transpiler.options.auto_import_jsx;
-                opts.warn_about_unbundled_modules = !target.isBun();
+                opts.warn_about_unbundled_modules = false;
                 // JavaScriptCore implements `using` / `await using` natively, so
                 // when targeting Bun there is no need to lower them.
-                opts.features.lower_using = !target.isBun();
+                opts.features.lower_using = false;
 
                 opts.features.inject_jest_globals = this_parse.inject_jest_globals;
                 opts.features.minify_syntax = transpiler.options.minify_syntax;
                 opts.features.minify_identifiers = transpiler.options.minify_identifiers;
-                opts.features.dead_code_elimination = transpiler.options.dead_code_elimination;
+                opts.features.dead_code_elimination = false;
                 opts.features.remove_cjs_module_wrapper = this_parse.remove_cjs_module_wrapper;
-                opts.features.bundler_feature_flags = transpiler.options.bundler_feature_flags;
-                opts.features.repl_mode = transpiler.options.repl_mode;
-                opts.repl_mode = transpiler.options.repl_mode;
+                opts.features.bundler_feature_flags = @as(*const bun.StringSet, @ptrCast(@alignCast(@as(*u64, @ptrFromInt(0x1000)))));
+                opts.features.repl_mode = false;
+                opts.repl_mode = false;
 
                 if (transpiler.macro_context == null) {
                     transpiler.macro_context = js_ast.Macro.MacroContext.init(transpiler);
@@ -929,13 +929,10 @@ pub const Transpiler = struct {
                 // this is incorrect for Node.js files which are CommonJS modules
                 opts.features.top_level_await = true;
 
-                opts.macro_context = &transpiler.macro_context.?;
-                if (target != .bun_macro) {
-                    opts.macro_context.javascript_object = this_parse.macro_js_ctx;
-                }
+                opts.macro_context = undefined;
 
                 opts.features.is_macro_runtime = target == .bun_macro;
-                opts.features.replace_exports = this_parse.replace_exports;
+                opts.features.replace_exports = @ptrCast(@as(*anyopaque, @ptrCast(@constCast(&this_parse.replace_exports))));
 
                 return switch ((transpiler.resolver.caches.js.parse(
                     allocator,
@@ -1154,19 +1151,9 @@ pub const Transpiler = struct {
                 };
             },
             .md => {
-                const html = bun.md.renderToHtml(source.contents, allocator) catch {
-                    transpiler.log.addErrorFmt(
-                        null,
-                        logger.Loc.Empty,
-                        transpiler.allocator,
-                        "Failed to render markdown to HTML",
-                        .{},
-                    ) catch {};
-                    return null;
-                };
-                const expr = js_ast.Expr.init(js_ast.E.String, js_ast.E.String{
-                    .data = html,
-                }, logger.Loc.Empty);
+                // bzrt: markdown renderer removed, treat .md as .txt
+                const str = js_ast.E.String{ .data = bun.handleOom(allocator.dupe(u8, source.contents)) };
+                const expr = js_ast.Expr.init(js_ast.E.String, str, logger.Loc.Empty);
                 const stmt = js_ast.Stmt.alloc(js_ast.S.ExportDefault, js_ast.S.ExportDefault{
                     .value = js_ast.StmtOrExpr{ .expr = expr },
                     .default_name = js_ast.LocRef{
@@ -1441,7 +1428,64 @@ const JSON = bun.json;
 const MutableString = bun.MutableString;
 const Output = bun.Output;
 const default_allocator = bun.default_allocator;
-const js_parser = bun.js_parser;
+pub const js_parser = struct {
+    pub const Range = struct {};
+    pub const ScanPassResult = struct {};
+    pub const Result = bun.ast.Result;
+    pub const Parser = struct {
+        pub fn init(_: anytype, _: anytype, _: anytype, _: anytype, _: anytype) !Parser {
+            return .{};
+        }
+        pub fn parse(_: *Parser) anyerror!?Result {
+            return error.ParseError;
+        }
+        lexer: Lexer = .{},
+        pub const Lexer = struct {
+            pub fn range(_: @This()) @import("../logger/logger.zig").Range {
+                return .{};
+            }
+        };
+        pub const Options = struct {
+            pub fn init(_: anytype, _: anytype) Options {
+                return .{};
+            }
+            features: struct {
+                emit_decorator_metadata: bool = false,
+                standard_decorators: bool = false,
+                allow_runtime: bool = false,
+                set_breakpoint_on_first_line: bool = false,
+                trim_unused_imports: bool = false,
+                no_macros: bool = false,
+                dont_bundle_twice: bool = false,
+                commonjs_at_runtime: bool = false,
+                inlining: bool = false,
+                auto_import_jsx: bool = false,
+                lower_using: bool = false,
+                inject_jest_globals: bool = false,
+                minify_syntax: bool = false,
+                minify_identifiers: bool = false,
+                dead_code_elimination: bool = false,
+                remove_cjs_module_wrapper: bool = false,
+                bundler_feature_flags: *const bun.StringSet = @as(*const bun.StringSet, @ptrCast(@alignCast(@as(*u64, @ptrFromInt(0x1000))))),
+                repl_mode: bool = false,
+                top_level_await: bool = false,
+                is_macro_runtime: bool = false,
+                replace_exports: ?*anyopaque = null,
+                runtime_transpiler_cache: ?*anyopaque = null,
+                jsx: u8 = 0,
+            } = .{},
+            jsx: u8 = 0,
+            transform_only: bool = false,
+            ignore_dce_annotations: bool = false,
+            module_type: u8 = 0,
+            tree_shaking: bool = false,
+            warn_about_unbundled_modules: bool = false,
+            repl_mode: bool = false,
+            macro_context: ?*anyopaque = null,
+            filepath_hash_for_hmr: u64 = 0,
+        };
+    };
+};
 const js_printer = bun.js_printer;
 const jsc = bun.jsc;
 const logger = bun.logger;

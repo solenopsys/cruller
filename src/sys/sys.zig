@@ -4427,8 +4427,8 @@ pub fn copyFileZSlowWithHandle(in_handle: bun.FD, to_dir: bun.FD, destination: [
         }
 
         if (comptime Environment.isPosix) {
-            _ = bun.c.fchmod(out_handle.cast(), stat_.mode);
-            _ = bun.c.fchown(out_handle.cast(), stat_.uid, stat_.gid);
+            _ = bun.c.fchmod(out_handle.cast(), @as(c_uint, @truncate(stat_.mode)));
+            _ = bun.c.fchown(out_handle.cast(), @as(c_uint, @truncate(stat_.uid)), @as(c_uint, @truncate(stat_.gid)));
         }
 
         return .success;

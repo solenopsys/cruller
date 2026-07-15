@@ -267,16 +267,9 @@ pub const Lookup = struct {
 
             const index = lookup.mapping.source_index;
 
-            // Standalone module graph source maps are stored (in memory) compressed.
-            // They are decompressed on demand.
+            // Standalone module graph source maps are removed (bzrt-cut).
             if (source_map.is_standalone_module_graph) {
-                const serialized = source_map.standaloneModuleGraphData();
-                if (index >= source_map.external_source_names.len)
-                    return null;
-
-                const code = serialized.sourceFileContents(@intCast(index));
-
-                return bun.jsc.ZigString.Slice.fromUTF8NeverFree(code orelse return null);
+                return null;
             }
 
             if (provider.getSourceMap(
@@ -300,7 +293,7 @@ pub const Lookup = struct {
                 .loose,
             );
             switch (bun.sys.File.readFrom(
-                std.fs.cwd(),
+                std.Io.Dir.cwd(),
                 normalized,
                 bun.default_allocator,
             )) {

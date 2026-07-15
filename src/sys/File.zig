@@ -70,7 +70,7 @@ pub fn from(other: anytype) File {
         return .{ .handle = .fromStdFile(other) };
     }
 
-    if (T == std.fs.Dir) {
+    if (T == std.Io.Dir) {
         return File{ .handle = .fromStdDir(other) };
     }
 

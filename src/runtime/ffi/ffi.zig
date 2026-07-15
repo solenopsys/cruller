@@ -2275,12 +2275,12 @@ const CompilerRT = struct {
 
     fn createCompilerRTDir() void {
         const tmpdir = Fs.FileSystem.instance.tmpdir() catch return;
-        var bunCC = tmpdir.makeOpenPath("bun-cc", .{}) catch return;
-        defer bunCC.close();
+        var bunCC = tmpdir.openDir(bun.compat.io(), "bun-cc", .{}) catch return;
+        defer bunCC.close(bun.compat.io());
 
         inline for (comptime std.meta.declarations(compiler_rt_sources)) |decl| {
             const source = @field(compiler_rt_sources, decl.name);
-            bunCC.writeFile(.{
+            bunCC.writeFile(bun.compat.io(), .{
                 .sub_path = decl.name,
                 .data = source,
             }) catch {};

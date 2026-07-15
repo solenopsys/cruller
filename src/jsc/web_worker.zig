@@ -440,7 +440,7 @@ fn startVM(this: *WebWorker) !void {
     assert(this.status == .start);
     assert(this.vm == null);
 
-    var transform_options = this.parent.transpiler.options.transform_options;
+    const transform_options = this.parent.transpiler.options.transform_options;
 
     this.arena = bun.MimallocArena.init();
     const allocator = this.arena.?.allocator();

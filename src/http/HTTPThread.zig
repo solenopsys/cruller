@@ -635,7 +635,7 @@ fn processEvents(this: *@This()) noreturn {
 
         var start_time: i128 = 0;
         if (comptime Environment.isDebug) {
-            start_time = std.time.nanoTimestamp();
+            start_time = bun.compat.nanoTimestamp();
         }
         Output.flush();
 
@@ -654,7 +654,7 @@ fn processEvents(this: *@This()) noreturn {
 
         // this.loop.run();
         if (comptime Environment.isDebug) {
-            const end = std.time.nanoTimestamp();
+            const end = bun.compat.nanoTimestamp();
             threadlog("Waited {D}\n", .{@as(i64, @truncate(end - start_time))});
             Output.flush();
         }

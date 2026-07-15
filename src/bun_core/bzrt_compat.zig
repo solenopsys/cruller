@@ -144,6 +144,20 @@ pub fn ArrayHashMapManaged(comptime K: type, comptime V: type, comptime Context:
         pub fn clearAndFree(self: *Self) void {
             self.unmanaged.clearAndFree(self.allocator);
         }
+        pub fn cloneWithAllocator(self: *const Self, new_allocator: std.mem.Allocator) !Self {
+            var cloned = Self.init(new_allocator);
+            cloned.unmanaged = try self.unmanaged.clone(new_allocator);
+            return cloned;
+        }
+        pub fn getKey(self: *Self, key: K) ?V {
+            return self.unmanaged.get(key);
+        }
+        pub fn putAssumeCapacity(self: *Self, key: K, value: V) void {
+            self.unmanaged.putAssumeCapacity(key, value);
+        }
+        pub fn sort(self: *Self, context: anytype) void {
+            self.unmanaged.sort(context);
+        }
     };
 }
 
@@ -230,6 +244,12 @@ pub fn intToEnum(comptime E: type, integer: anytype) error{InvalidEnumTag}!E {
 
 pub fn isatty(fd: anytype) bool {
     return std.c.isatty(@intCast(fd)) != 0;
+}
+
+pub fn nanoTimestamp() i128 {
+    var ts: std.c.timespec = undefined;
+    _ = std.c.clock_gettime(.MONOTONIC, &ts);
+    return @as(i128, ts.sec) * std.time.ns_per_s + ts.nsec;
 }
 
 pub fn timestamp() i64 {
@@ -580,3 +600,19 @@ pub const NetAddress = extern union {
         }
     }
 };
+
+pub fn fileClose(file: std.Io.File) void {
+    std.Io.File.close(file, io());
+}
+
+pub fn fileStat(file: std.Io.File) !std.Io.File.Stat {
+    return std.Io.File.stat(file, io());
+}
+
+pub fn fileReadAll(file: std.Io.File, buffer: []u8) !usize {
+    return std.Io.File.readPositionalAll(file, io(), buffer, 0);
+}
+
+pub fn dirClose(dir: std.Io.Dir) void {
+    std.Io.Dir.close(dir, io());
+}

@@ -91,28 +91,7 @@ fn createExecArgv(globalObject: *jsc.JSGlobalObject) bun.JSError!jsc.JSValue {
 
         // A set of execArgv args consume an extra argument, so we do not want to
         // confuse these with script names.
-        const map = bun.ComptimeStringMap(void, comptime brk: {
-            const auto_params = bun.cli.Arguments.auto_params;
-            const KV = struct { []const u8, void };
-            var entries: [auto_params.len]KV = undefined;
-            var i = 0;
-            for (auto_params) |param| {
-                if (param.takes_value != .none) {
-                    if (param.names.long) |name| {
-                        entries[i] = .{ "--" ++ name, {} };
-                        i += 1;
-                    }
-                    if (param.names.short) |name| {
-                        entries[i] = .{ &[_]u8{ '-', name }, {} };
-                        i += 1;
-                    }
-                }
-            }
-
-            var result: [i]KV = undefined;
-            @memcpy(&result, entries[0..i]);
-            break :brk result;
-        });
+        const map = bun.ComptimeStringMap(void, .{});
 
         if (prev) |p| if (map.has(p)) {
             try args.append(bun.String.cloneUTF8(arg));

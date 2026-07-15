@@ -37,6 +37,14 @@ pub fn ComptimeStringMapWithKeyType(comptime KeyType: type, comptime V: type, co
         } else {
             @compileError("Not implemented for this key type");
         }
+        if (kvs_list.len == 0) {
+            break :blk .{
+                .min_len = 0,
+                .max_len = 0,
+                .sorted_kvs = sorted_kvs,
+                .len_indexes = undefined,
+            };
+        }
         std.sort.pdq(KV, &sorted_kvs, {}, lenAsc);
         const min_len = sorted_kvs[0].key.len;
         const max_len = sorted_kvs[sorted_kvs.len - 1].key.len;
@@ -146,6 +154,7 @@ pub fn ComptimeStringMapWithKeyType(comptime KeyType: type, comptime V: type, co
         }
 
         pub fn get(str: []const KeyType) ?V {
+            if (kvs.len == 0) return null;
             if (str.len < precomputed.min_len or str.len > precomputed.max_len)
                 return null;
 

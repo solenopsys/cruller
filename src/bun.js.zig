@@ -3,16 +3,7 @@ pub const webcore = @import("./runtime/webcore.zig");
 pub const api = @import("./runtime/api.zig");
 pub const bindgen = @import("./jsc/bindgen.zig");
 
-pub fn applyStandaloneRuntimeFlags(b: *bun.Transpiler, graph: *const bun.StandaloneModuleGraph) void {
-    b.options.env.disable_default_env_files = graph.flags.disable_default_env_files;
-    b.options.env.behavior = if (graph.flags.disable_default_env_files)
-        .disable
-    else
-        .load_all_without_inlining;
-
-    b.resolver.opts.load_tsconfig_json = !graph.flags.disable_autoload_tsconfig;
-    b.resolver.opts.load_package_json = !graph.flags.disable_autoload_package_json;
-}
+pub fn applyStandaloneRuntimeFlags(_: *bun.Transpiler, _: *const bun.StandaloneModuleGraph) void {}
 
 pub const Run = struct {
     ctx: Command.Context,

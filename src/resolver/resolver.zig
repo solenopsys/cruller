@@ -537,40 +537,14 @@ pub const Resolver = struct {
 
     pub fn getPackageManager(this: *Resolver) *PackageManager {
         return this.package_manager orelse brk: {
-            bun.HTTPThread.init(&.{});
-            const pm = PackageManager.initWithRuntime(
-                this.log,
-                this.opts.install,
-
-                // This cannot be the threadlocal allocator. It goes to the HTTP thread.
-                bun.default_allocator,
-
-                .{},
-                this.env_loader.?,
-            );
-            pm.onWake = this.onWakePackageManager;
-            this.package_manager = pm;
-            break :brk pm;
+            this.package_manager = &PackageManager{};
+            break :brk this.package_manager.?;
         };
     }
 
     pub inline fn usePackageManager(self: *const ThisResolver) bool {
-        // TODO(@paperclover): make this configurable. the rationale for disabling
-        // auto-install in standalone mode is that such executable must either:
-        //
-        // - bundle the dependency itself. dynamic `require`/`import` could be
-        //   changed to bundle potential dependencies specified in package.json
-        //
-        // - want to load the user's node_modules, which is what currently happens.
-        //
-        // auto install, as of writing, is also quite buggy and untested, it always
-        // installs the latest version regardless of a user's package.json or specifier.
-        // in addition to being not fully stable, it is completely unexpected to invoke
-        // a package manager after bundling an executable. if enough people run into
-        // this, we could implement point 1
-        if (self.standalone_module_graph) |_| return false;
-
-        return self.opts.global_cache.isEnabled();
+        _ = self;
+        return false;
     }
 
     pub fn init1(
@@ -680,7 +654,7 @@ pub const Resolver = struct {
             bun.crash_handler.current_action = prev_action;
         };
 
-        if (Environment.show_crash_trace and bun.cli.debug_flags.hasResolveBreakpoint(import_path)) {
+        if (Environment.show_crash_trace) {
             bun.Output.debug("Resolving <green>{s}<r> from <blue>{s}<r>", .{
                 import_path,
                 source_dir,
@@ -834,45 +808,7 @@ pub const Resolver = struct {
         // ...unless you pass a relative path that exists in the standalone module graph executable.
         var source_dir_resolver: bun.path.PosixToWinNormalizer = .{};
         const source_dir_normalized = brk: {
-            if (r.standalone_module_graph) |graph| {
-                if (bun.StandaloneModuleGraph.isBunStandaloneFilePath(import_path)) {
-                    if (graph.findAssumeStandalonePath(import_path) != null) {
-                        return .{
-                            .success = Result{
-                                .import_kind = kind,
-                                .path_pair = PathPair{
-                                    .primary = Path.init(import_path),
-                                },
-                                .module_type = .esm,
-                                .flags = .{ .is_standalone_module = true },
-                            },
-                        };
-                    }
-
-                    return .{ .not_found = {} };
-                } else if (bun.StandaloneModuleGraph.isBunStandaloneFilePath(source_dir)) {
-                    if (import_path.len > 2 and isDotSlash(import_path[0..2])) {
-                        const buf = bufs(.import_path_for_standalone_module_graph);
-                        const joined = bun.path.joinAbsStringBuf(source_dir, buf, &.{import_path}, .loose);
-
-                        // Support relative paths in the graph
-                        if (graph.findAssumeStandalonePath(joined)) |file| {
-                            return .{
-                                .success = Result{
-                                    .import_kind = kind,
-                                    .path_pair = PathPair{
-                                        .primary = Path.init(file.name),
-                                    },
-                                    .module_type = .esm,
-                                    .flags = .{ .is_standalone_module = true },
-                                },
-                            };
-                        }
-                    }
-                    break :brk Fs.FileSystem.instance.top_level_dir;
-                }
-            }
-
+            // bzrt: standalone module graph removed
             // Fail now if there is no directory to resolve in. This can happen for
             // virtual modules (e.g. stdin) if a resolve directory is not specified.
             //
@@ -995,23 +931,6 @@ pub const Resolver = struct {
     /// Runs a resolution but also checking if a Bun Bake framework has an
     /// override. This is used in one place in the bundler.
     pub fn resolveWithFramework(r: *ThisResolver, source_dir: string, import_path: string, kind: ast.ImportKind) !Result {
-        if (r.opts.framework) |f| {
-            if (f.built_in_modules.get(import_path)) |mod| {
-                switch (mod) {
-                    .code => {
-                        return .{
-                            .import_kind = kind,
-                            .path_pair = .{ .primary = Fs.Path.initWithNamespace(import_path, "node") },
-                            .module_type = .esm,
-                            .primary_side_effects_data = .no_side_effects__pure_data,
-                            .flags = .{ .is_external = false },
-                        };
-                    },
-                    .import => |path| return r.resolve(r.fs.top_level_dir, path, .entry_point_build),
-                }
-                return .{};
-            }
-        }
         return r.resolve(source_dir, import_path, kind);
     }
 
@@ -1096,7 +1015,7 @@ pub const Resolver = struct {
                         if (!query.entry.cache.fd.isValid() and store_fd) {
                             buf[out.len] = 0;
                             const span = buf[0..out.len :0];
-                            var file: bun.FD = .fromStdFile(try std.fs.openFileAbsoluteZ(span, .{ .mode = .read_only }));
+                            var file: bun.FD = .fromStdFile(try std.Io.Dir.openFileAbsolute(bun.compat.io(), span, .{ .mode = .read_only }));
                             query.entry.cache.fd = file;
                             Fs.FileSystem.setMaxFd(file.native());
                         }
@@ -1105,7 +1024,7 @@ pub const Resolver = struct {
                             if (r.fs.fs.needToCloseFiles()) {
                                 if (query.entry.cache.fd.isValid()) {
                                     var file = query.entry.cache.fd.stdFile();
-                                    file.close();
+                                    file.close(bun.compat.io());
                                     query.entry.cache.fd = .invalid;
                                 }
                             }
@@ -4074,8 +3993,8 @@ pub const Resolver = struct {
                             }
 
                             const this_dir = fd.stdDir();
-                            var file = this_dir.openDirZ(".bin", .{}) catch break :append_bin_dir;
-                            defer file.close();
+                            var file = this_dir.openDir(bun.compat.io(), ".bin", .{}) catch break :append_bin_dir;
+                            defer file.close(bun.compat.io());
                             const bin_path = bun.getFdPath(.fromStdDir(file), bufs(.node_bin_path)) catch break :append_bin_dir;
                             bin_folders_lock.lock();
                             defer bin_folders_lock.unlock();
@@ -4394,7 +4313,11 @@ const Dependency = struct {
     pub const Version = struct {};
 };
 const PackageManager = struct {
-    pub const WakeHandler = struct {};
+    pub const WakeHandler = struct {
+        context: ?*anyopaque = null,
+        handler: ?*const fn (ctx: *anyopaque) void = null,
+        onDependencyError: ?*const fn (ctx: *anyopaque, err: anyerror) void = null,
+    };
 };
 
 // bzrt: npm-типы

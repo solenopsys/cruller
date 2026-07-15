@@ -1748,18 +1748,16 @@ pub fn NewServer(protocol_enum: enum { http, https }, development_kind: enum { d
 
         var did_send_idletimeout_warning_once = false;
         fn onTimeoutForIdleWarn(_: *anyopaque, _: ?*anyopaque) void {
-            if (debug_mode and !did_send_idletimeout_warning_once) {
-                if (!bun.cli.Command.get().debug.silent) {
+                if (debug_mode and !did_send_idletimeout_warning_once) {
                     did_send_idletimeout_warning_once = true;
                     Output.prettyErrorln("<r><yellow>[Bun.serve]<r><d>:<r> request timed out after 10 seconds. Pass <d><cyan>`idleTimeout`<r> to configure.", .{});
                     Output.flush();
                 }
-            }
         }
 
         fn shouldAddTimeoutHandlerForWarning(server: *ThisServer) bool {
             if (comptime debug_mode) {
-                if (!did_send_idletimeout_warning_once and !bun.cli.Command.get().debug.silent) {
+                if (!did_send_idletimeout_warning_once) {
                     return !server.config.has_idleTimeout;
                 }
             }

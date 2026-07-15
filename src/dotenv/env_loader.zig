@@ -570,12 +570,16 @@ pub const Loader = struct {
     pub fn loadProcess(this: *Loader) OOM!void {
         if (this.did_load_process) return;
 
-        try this.map.map.ensureTotalCapacity(std.os.environ.len);
-        for (std.os.environ) |_env| {
-            var env = bun.span(_env);
-            if (strings.indexOfChar(env, '=')) |i| {
-                const key = env[0..i];
-                const value = env[i + 1 ..];
+        var env_count: usize = 0;
+        while (std.c.environ[env_count]) |_| {
+            env_count += 1;
+        }
+        try this.map.map.ensureTotalCapacity(env_count);
+        for (0..env_count) |i| {
+            var env = bun.span(std.c.environ[i].?);
+            if (strings.indexOfChar(env, '=')) |eq_pos| {
+                const key = env[0..eq_pos];
+                const value = env[eq_pos + 1 ..];
                 if (key.len > 0) {
                     try this.map.put(key, value);
                 }
@@ -604,7 +608,7 @@ pub const Loader = struct {
         comptime suffix: DotEnvFileSuffix,
         skip_default_env: bool,
     ) !void {
-        const start = std.time.nanoTimestamp();
+        const start = bun.compat.nanoTimestamp();
 
         // Create a reusable buffer with stack fallback for parsing multiple files
         var stack_fallback = std.heap.stackFallback(4096, this.allocator);
@@ -659,7 +663,7 @@ pub const Loader = struct {
         comptime suffix: DotEnvFileSuffix,
         value_buffer: *std.array_list.Managed(u8),
     ) !void {
-        const dir_handle: std.fs.Dir = std.fs.cwd();
+        const dir_handle: std.Io.Dir = std.Io.Dir.cwd();
 
         switch (comptime suffix) {
             .development => {
@@ -729,7 +733,7 @@ pub const Loader = struct {
             this.custom_files_loaded.count();
 
         if (count == 0) return;
-        const elapsed = @as(f64, @floatFromInt((std.time.nanoTimestamp() - start))) / std.time.ns_per_ms;
+        const elapsed = @as(f64, @floatFromInt((bun.compat.nanoTimestamp() - start))) / std.time.ns_per_ms;
 
         const all = [_]string{
             ".env.development.local",
@@ -783,7 +787,7 @@ pub const Loader = struct {
 
     pub fn loadEnvFile(
         this: *Loader,
-        dir: std.fs.Dir,
+        dir: std.Io.Dir,
         comptime base: string,
         comptime override: bool,
         value_buffer: *std.array_list.Managed(u8),
@@ -792,7 +796,7 @@ pub const Loader = struct {
             return;
         }
 
-        var file = dir.openFile(base, .{ .mode = .read_only }) catch |err| {
+        var file = dir.openFile(bun.compat.io(), base, .{ .mode = .read_only }) catch |err| {
             switch (err) {
                 error.IsDir, error.FileNotFound => {
                     // prevent retrying
@@ -813,11 +817,11 @@ pub const Loader = struct {
                 },
             }
         };
-        defer file.close();
+        defer file.close(bun.compat.io());
 
         const end = brk: {
             if (comptime Environment.isWindows) {
-                const pos = try file.getEndPos();
+                const pos = try file.getEndPos(bun.compat.io());
                 if (pos == 0) {
                     @field(this, base) = logger.Source.initPathString(base, "");
                     return;
@@ -826,7 +830,7 @@ pub const Loader = struct {
                 break :brk pos;
             }
 
-            const stat = try file.stat();
+            const stat = try file.stat(bun.compat.io());
 
             if (stat.size == 0 or stat.kind != .file) {
                 @field(this, base) = logger.Source.initPathString(base, "");
@@ -838,20 +842,7 @@ pub const Loader = struct {
 
         var buf = try this.allocator.alloc(u8, end + 1);
         errdefer this.allocator.free(buf);
-        const amount_read = file.readAll(buf[0..end]) catch |err| switch (err) {
-            error.Unexpected, error.SystemResources, error.OperationAborted, error.BrokenPipe, error.AccessDenied, error.IsDir => {
-                if (!this.quiet) {
-                    Output.prettyErrorln("<r><red>{s}<r> error loading {s} file", .{ @errorName(err), base });
-                }
-
-                // prevent retrying
-                @field(this, base) = logger.Source.initPathString(base, "");
-                return;
-            },
-            else => {
-                return err;
-            },
-        };
+        const amount_read = try bun.compat.fileReadAll(file, buf[0..end]);
 
         // The null byte here is mostly for debugging purposes.
         buf[end] = 0;
@@ -881,25 +872,15 @@ pub const Loader = struct {
             return;
         }
 
-        var file = bun.openFile(file_path, .{ .mode = .read_only }) catch {
+        const file = bun.openFile(file_path, .{ .mode = .read_only }) catch {
             // prevent retrying
             try this.custom_files_loaded.put(file_path, logger.Source.initPathString(file_path, ""));
             return;
         };
-        defer file.close();
+        defer bun.compat.fileClose(file);
 
         const end = brk: {
-            if (comptime Environment.isWindows) {
-                const pos = try file.getEndPos();
-                if (pos == 0) {
-                    try this.custom_files_loaded.put(file_path, logger.Source.initPathString(file_path, ""));
-                    return;
-                }
-
-                break :brk pos;
-            }
-
-            const stat = try file.stat();
+            const stat = try bun.compat.fileStat(file);
 
             if (stat.size == 0 or stat.kind != .file) {
                 try this.custom_files_loaded.put(file_path, logger.Source.initPathString(file_path, ""));
@@ -911,21 +892,7 @@ pub const Loader = struct {
 
         var buf = try this.allocator.alloc(u8, end + 1);
         errdefer this.allocator.free(buf);
-        const amount_read = file.readAll(buf[0..end]) catch |err| switch (err) {
-            error.Unexpected, error.SystemResources, error.OperationAborted, error.BrokenPipe, error.AccessDenied, error.IsDir => {
-                if (!this.quiet) {
-                    Output.prettyErrorln("<r><red>{s}<r> error loading {s} file", .{ @errorName(err), file_path });
-                }
-
-                // prevent retrying
-                try this.custom_files_loaded.put(file_path, logger.Source.initPathString(file_path, ""));
-                return;
-            },
-            else => {
-                return err;
-            },
-        };
-
+        const amount_read = try bun.compat.fileReadAll(file, buf[0..end]);
         // The null byte here is mostly for debugging purposes.
         buf[end] = 0;
 

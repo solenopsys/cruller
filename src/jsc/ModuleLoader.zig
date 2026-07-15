@@ -149,17 +149,12 @@ pub fn transpileSourceCode(
             jsc_vm.transpiler.log = log;
             jsc_vm.transpiler.linker.log = log;
             jsc_vm.transpiler.resolver.log = log;
-            if (jsc_vm.transpiler.resolver.package_manager) |pm| {
-                pm.log = log;
-            }
 
             defer {
                 jsc_vm.transpiler.log = old;
                 jsc_vm.transpiler.linker.log = old;
                 jsc_vm.transpiler.resolver.log = old;
-                if (jsc_vm.transpiler.resolver.package_manager) |pm| {
-                    pm.log = old;
-                }
+
             }
 
             // this should be a cheap lookup because 24 bytes == 8 * 3 so it's read 3 machine words
@@ -342,7 +337,7 @@ pub fn transpileSourceCode(
                     .allocator = null,
                     .specifier = input_specifier,
                     .source_url = input_specifier.createIfDifferent(path.text),
-                    .jsvalue_for_export = parse_result.ast.parts.at(0).stmts[0].data.s_expr.value.toJS(allocator, globalObject orelse jsc_vm.global) catch |e| panic("Unexpected JS error: {s}", .{@errorName(e)}),
+                    .jsvalue_for_export = JSValue.createEmptyObject(jsc_vm.global, 0),
                     .tag = .exports_object,
                 };
             }

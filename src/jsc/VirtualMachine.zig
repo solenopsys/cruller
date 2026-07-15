@@ -517,11 +517,11 @@ pub fn loadExtraEnvAndSourceCodePrinter(this: *VirtualMachine) void {
             .json;
 
         IPC.log("IPC environment variables: NODE_CHANNEL_FD={s}, NODE_CHANNEL_SERIALIZATION_MODE={s}", .{ fd_s, @tagName(mode) });
-        if (std.fmt.parseInt(u31, fd_s, 10)) |fd| {
-            this.initIPCInstance(.fromUV(fd), mode);
-        } else {
+        const fd = std.fmt.parseInt(u31, fd_s, 10) catch {
             Output.warn("Failed to parse IPC channel number '{s}'", .{fd_s});
-        }
+            return;
+        };
+        this.initIPCInstance(.fromUV(fd), mode);
     }
 
     // Node.js checks if this are set to "1" and no other value
@@ -551,12 +551,11 @@ pub fn loadExtraEnvAndSourceCodePrinter(this: *VirtualMachine) void {
         }
 
         if (map.get("BUN_FEATURE_FLAG_SYNTHETIC_MEMORY_LIMIT")) |value| {
-            if (std.fmt.parseInt(usize, value, 10)) |limit| {
-                synthetic_allocation_limit = limit;
-                string_allocation_limit = limit;
-            } else {
+            const limit = std.fmt.parseInt(usize, value, 10) catch {
                 Output.panic("BUN_FEATURE_FLAG_SYNTHETIC_MEMORY_LIMIT must be a positive integer", .{});
-            }
+            };
+            synthetic_allocation_limit = limit;
+            string_allocation_limit = limit;
         }
     }
 }
@@ -1094,7 +1093,7 @@ fn getOriginTimestamp() u64 {
             u128,
             // handle if they set their system clock to be before epoch
             @intCast(@max(
-                std.time.nanoTimestamp(),
+                bun.compat.nanoTimestamp(),
                 origin_relative_epoch,
             )),
         ) - origin_relative_epoch),
@@ -1157,12 +1156,6 @@ pub fn initWithModuleGraph(
     vm.transpiler.resolver.store_fd = false;
     vm.transpiler.resolver.prefer_module_field = false;
 
-    vm.transpiler.resolver.onWakePackageManager = .{
-        .context = &vm.modules,
-        .handler = ModuleLoader.AsyncModule.Queue.onWakeHandler,
-        .onDependencyError = ModuleLoader.AsyncModule.Queue.onDependencyError,
-    };
-
     // Emitting "@__PURE__" comments at runtime is a waste of memory and time.
     vm.transpiler.options.emit_dce_annotations = false;
 
@@ -1213,7 +1206,7 @@ pub const Options = struct {
     eval: bool = false,
 
     graph: ?*bun.StandaloneModuleGraph = null,
-    debugger: bun.cli.Command.Debugger = .{ .unspecified = {} },
+    debugger: struct {} = .{},
     is_main_thread: bool = false,
     /// Whether this VM should be destroyed after it exits, even if it is the main thread's VM.
     /// Worker VMs are always destroyed on exit, regardless of this setting. Setting this to
@@ -1290,12 +1283,6 @@ pub fn init(opts: Options) !*VirtualMachine {
     vm.transpiler.resolver.prefer_module_field = false;
     vm.transpiler.resolver.opts.preserve_symlinks = opts.args.preserve_symlinks orelse false;
 
-    vm.transpiler.resolver.onWakePackageManager = .{
-        .context = &vm.modules,
-        .handler = ModuleLoader.AsyncModule.Queue.onWakeHandler,
-        .onDependencyError = ModuleLoader.AsyncModule.Queue.onDependencyError,
-    };
-
     vm.transpiler.configureLinker();
 
     vm.transpiler.macro_context = js_ast.Macro.MacroContext.init(&vm.transpiler);
@@ -1332,7 +1319,7 @@ pub inline fn assertOnJSThread(vm: *const VirtualMachine) void {
     }
 }
 
-fn configureDebugger(this: *VirtualMachine, cli_flag: bun.cli.Command.Debugger) void {
+fn configureDebugger(this: *VirtualMachine, cli_flag: anytype) void {
     if (bun.env_var.HYPERFINE_RANDOMIZED_ENVIRONMENT_OFFSET.get() != null) {
         return;
     }
@@ -1340,40 +1327,27 @@ fn configureDebugger(this: *VirtualMachine, cli_flag: bun.cli.Command.Debugger) 
     const unix = bun.env_var.BUN_INSPECT.get();
     const connect_to = bun.env_var.BUN_INSPECT_CONNECT_TO.get();
 
+    _ = cli_flag;
     const set_breakpoint_on_first_line = unix.len > 0 and strings.endsWith(unix, "?break=1"); // If we should set a breakpoint on the first line
     const wait_for_debugger = unix.len > 0 and strings.endsWith(unix, "?wait=1"); // If we should wait for the debugger to connect before starting the event loop
+    _ = wait_for_debugger;
 
-    const wait_for_connection: jsc.Debugger.Wait = if (set_breakpoint_on_first_line or wait_for_debugger) .forever else .off;
-
-    switch (cli_flag) {
-        .unspecified => {
-            if (unix.len > 0) {
-                this.debugger = .{
-                    .path_or_port = null,
-                    .from_environment_variable = unix,
-                    .wait_for_connection = wait_for_connection,
-                    .set_breakpoint_on_first_line = set_breakpoint_on_first_line,
-                };
-            } else if (connect_to.len > 0) {
-                // This works in the vscode debug terminal because that relies on unix or notify being set, which they
-                // are in the debug terminal. This branch doesn't reach
-                this.debugger = .{
-                    .path_or_port = null,
-                    .from_environment_variable = connect_to,
-                    .wait_for_connection = .off,
-                    .set_breakpoint_on_first_line = false,
-                    .mode = .connect,
-                };
-            }
-        },
-        .enable => {
-            this.debugger = .{
-                .path_or_port = cli_flag.enable.path_or_port,
-                .from_environment_variable = unix,
-                .wait_for_connection = if (cli_flag.enable.wait_for_connection) .forever else wait_for_connection,
-                .set_breakpoint_on_first_line = set_breakpoint_on_first_line or cli_flag.enable.set_breakpoint_on_first_line,
-            };
-        },
+    const wait_for_connection: jsc.Debugger.Wait = .off;
+    if (unix.len > 0) {
+        this.debugger = .{
+            .path_or_port = null,
+            .from_environment_variable = unix,
+            .wait_for_connection = wait_for_connection,
+            .set_breakpoint_on_first_line = set_breakpoint_on_first_line,
+        };
+    } else if (connect_to.len > 0) {
+        this.debugger = .{
+            .path_or_port = null,
+            .from_environment_variable = connect_to,
+            .wait_for_connection = .off,
+            .set_breakpoint_on_first_line = false,
+            .mode = .connect,
+        };
     }
 
     if (this.isInspectorEnabled()) {
@@ -1457,13 +1431,7 @@ pub fn initWorker(
     vm.transpiler.macro_context = null;
     vm.transpiler.resolver.store_fd = opts.store_fd;
     vm.transpiler.resolver.prefer_module_field = false;
-    vm.transpiler.resolver.onWakePackageManager = .{
-        .context = &vm.modules,
-        .handler = ModuleLoader.AsyncModule.Queue.onWakeHandler,
-        .onDependencyError = ModuleLoader.AsyncModule.Queue.onDependencyError,
-    };
     vm.transpiler.resolver.standalone_module_graph = opts.graph;
-
     if (opts.graph == null) {
         vm.transpiler.configureLinker();
     } else {
@@ -1942,16 +1910,10 @@ pub fn resolveMaybeNeedsTrailingSlash(
     jsc_vm.log = &log;
     jsc_vm.transpiler.resolver.log = &log;
     jsc_vm.transpiler.linker.log = &log;
-    if (jsc_vm.transpiler.resolver.package_manager) |pm| {
-        pm.log = &log;
-    }
     defer {
         jsc_vm.log = old_log;
         jsc_vm.transpiler.linker.log = old_log;
         jsc_vm.transpiler.resolver.log = old_log;
-        if (jsc_vm.transpiler.resolver.package_manager) |pm| {
-            pm.log = old_log;
-        }
     }
     jsc_vm._resolve(&result, specifier_utf8.slice(), normalizeSource(source_utf8.slice()), is_esm, is_a_file_path) catch |err_| {
         var err = err_;
@@ -3868,28 +3830,7 @@ pub fn resolveSourceMapping(
     column: Ordinal,
     source_handling: SourceMap.SourceContentHandling,
 ) ?SourceMap.Mapping.Lookup {
-    return this.source_mappings.resolveMapping(path, line, column, source_handling) orelse {
-        if (this.standalone_module_graph) |graph| {
-            const file = graph.find(path) orelse return null;
-            const map = file.sourcemap.load() orelse return null;
-
-            map.ref();
-
-            this.source_mappings.putValue(path, SavedSourceMap.Value.init(map)) catch
-                bun.outOfMemory();
-
-            const mapping = map.findMapping(line, column) orelse
-                return null;
-
-            return .{
-                .mapping = mapping,
-                .source_map = map,
-                .prefetched_source_code = null,
-            };
-        }
-
-        return null;
-    };
+    return this.source_mappings.resolveMapping(path, line, column, source_handling) orelse return null;
 }
 
 extern fn Process__emitMessageEvent(global: *JSGlobalObject, value: JSValue, handle: JSValue) void;

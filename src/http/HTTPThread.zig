@@ -655,7 +655,7 @@ fn processEvents(this: *@This()) noreturn {
         // this.loop.run();
         if (comptime Environment.isDebug) {
             const end = bun.compat.nanoTimestamp();
-            threadlog("Waited {D}\n", .{@as(i64, @truncate(end - start_time))});
+            threadlog("Waited {d}\n", .{@as(i64, @truncate(end - start_time))});
             Output.flush();
         }
     }

@@ -887,7 +887,7 @@ var windows_segfault_handle: ?windows.HANDLE = null;
 pub fn resetOnPosix() void {
     if (bun.Environment.enable_asan) return;
     var act = bun.sys.Sigaction{
-        .handler = .{ .sigaction = handleSegfaultPosix },
+        .handler = .{ .sigaction = @ptrCast(&handleSegfaultPosix) },
         .mask = bun.sys.sigemptyset(),
         .flags = (std.posix.SA.SIGINFO | std.posix.SA.RESTART | std.posix.SA.RESETHAND),
     };

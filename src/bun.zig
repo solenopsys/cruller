@@ -2149,9 +2149,11 @@ pub fn appendOptionsEnv(env: []const u8, comptime ArgType: type, args: *std.arra
 
 pub fn initArgv() !void {
     if (comptime Environment.isPosix) {
-        argv = try bun.default_allocator.alloc([:0]const u8, std.os.argv.len);
+        const argc: usize = @intCast(@extern(*c_int, .{ .name = "std___argc" }).*);
+        const argv_ptr: [*][*:0]u8 = @extern(*[*][*:0]u8, .{ .name = "std___argv" }).*;
+        argv = try bun.default_allocator.alloc([:0]const u8, argc);
         for (0..argv.len) |i| {
-            argv[i] = std.mem.sliceTo(std.os.argv[i], 0);
+            argv[i] = std.mem.sliceTo(argv_ptr[i], 0);
         }
     } else if (comptime Environment.isWindows) {
         // Zig's implementation of `std.process.argsAlloc()`on Windows platforms

@@ -241,8 +241,8 @@ pub const Source = struct {
                 WindowsStdio.init();
             }
 
-            const stdout = bun.sys.File.from(std.fs.File.stdout());
-            const stderr = bun.sys.File.from(std.fs.File.stderr());
+            const stdout = bun.sys.File.from(bun.FD.fromNative(1));
+            const stderr = bun.sys.File.from(bun.FD.fromNative(2));
 
             Source.setInit(stdout, stderr);
 
@@ -1293,7 +1293,7 @@ pub fn initScopedDebugWriterAtStartup() void {
     if (bun.env_var.BUN_DEBUG.get()) |path| {
         if (path.len > 0 and !strings.eql(path, "0") and !strings.eql(path, "false")) {
             if (std.fs.path.dirname(path)) |dir| {
-                std.fs.cwd().makePath(dir) catch {};
+                bun.makePath(std.Io.Dir.cwd(), dir) catch {};
             }
 
             // do not use libuv through this code path, since it might not be initialized yet.
@@ -1303,12 +1303,12 @@ pub fn initScopedDebugWriterAtStartup() void {
             const path_fmt = std.mem.replaceOwned(u8, bun.default_allocator, path, "{pid}", pid) catch @panic("failed to allocate path");
             defer bun.default_allocator.free(path_fmt);
 
-            const fd: bun.FD = .fromStdFile(std.fs.cwd().createFile(path_fmt, .{
-                .mode = if (Environment.isPosix) 0o644 else 0,
-            }) catch |open_err| {
-                panic("Failed to open file for debug output: {s} ({s})", .{ @errorName(open_err), path });
-            });
-            _ = fd.truncate(0); // windows
+            const fd: bun.FD = switch (bun.sys.openatA(bun.FD.cwd(), path_fmt, bun.sys.O.WRONLY | bun.sys.O.CREAT | bun.sys.O.TRUNC, 0o644)) {
+                .result => |f| f,
+                .err => {
+                    panic("Failed to open file for debug output: {s}", .{path_fmt});
+                },
+            };
             ScopedDebugWriter.scoped_file_writer = fd.quietWriter();
             return;
         }

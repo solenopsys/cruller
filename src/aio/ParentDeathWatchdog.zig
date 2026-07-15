@@ -171,7 +171,7 @@ pub fn enable() void {
         // also runs the descendant reaper; on Linux the SIGKILL case relies on
         // env-var inheritance — Bun-spawning-Bun chains self-reap because each
         // link sets its own PDEATHSIG.
-        _ = std.posix.prctl(.SET_PDEATHSIG, .{std.posix.SIG.KILL}) catch return;
+        _ = std.posix.prctl(.SET_PDEATHSIG, .{@intFromEnum(std.posix.SIG.KILL)}) catch return;
         // Race: parent may have died between getppid() above and prctl()
         // taking effect. If so we've already been reparented and the kernel
         // will never deliver the signal — exit now.
@@ -254,9 +254,9 @@ pub fn killDescendants() void {
 
     const self_pid = std.c.getpid();
 
-    var to_visit: std.ArrayListUnmanaged(std.c.pid_t) = .{};
+    var to_visit: std.ArrayListUnmanaged(std.c.pid_t) = .{ .items = &.{}, .capacity = 0 };
     defer to_visit.deinit(bun.default_allocator);
-    var to_kill: std.ArrayListUnmanaged(std.c.pid_t) = .{};
+    var to_kill: std.ArrayListUnmanaged(std.c.pid_t) = .{ .items = &.{}, .capacity = 0 };
     defer to_kill.deinit(bun.default_allocator);
 
     to_visit.append(bun.default_allocator, self_pid) catch return;

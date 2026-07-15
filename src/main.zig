@@ -1,10 +1,6 @@
 pub const panic = _bun.crash_handler.panic;
 pub const std_options = std.Options{
     .enable_segfault_handler = false,
-    // Use BoringSSL's RAND_bytes instead of the default getrandom() syscall.
-    // BoringSSL falls back to /dev/urandom on older kernels (< 3.17) where
-    // the getrandom syscall doesn't exist, avoiding a panic on ENOSYS.
-    .cryptoRandomSeed = _bun.csprng,
 };
 
 pub const io_mode = .blocking;
@@ -27,8 +23,8 @@ pub fn main() void {
             .mask = _bun.sys.sigemptyset(),
             .flags = 0,
         };
-        _bun.sys.sigaction(std.posix.SIG.PIPE, &act, null);
-        _bun.sys.sigaction(std.posix.SIG.XFSZ, &act, null);
+        _bun.sys.sigaction(@intFromEnum(std.posix.SIG.PIPE), &act, null);
+        _bun.sys.sigaction(@intFromEnum(std.posix.SIG.XFSZ), &act, null);
     }
 
     if (Environment.isDebug) {
@@ -49,21 +45,31 @@ pub fn main() void {
         _environ = @ptrCast(std.os.environ.ptr);
     }
 
-    _bun.start_time = std.time.nanoTimestamp();
+    _bun.start_time = blk: {
+        var ts: std.c.timespec = undefined;
+        if (std.c.clock_gettime(std.c.CLOCK.MONOTONIC, &ts) != 0)
+            if (std.c.clock_gettime(std.c.CLOCK.REALTIME, &ts) != 0)
+                break :blk 0;
+        break :blk @as(i128, ts.sec) * std.time.ns_per_s + @as(i128, ts.nsec);
+    };
     _bun.initArgv() catch |err| {
         Output.panic("Failed to initialize argv: {s}\n", .{@errorName(err)});
     };
 
     Output.Source.Stdio.init();
     defer Output.flush();
-    if (Environment.isX64 and Environment.enableSIMD and Environment.isPosix) {
-        bun_warn_avx_missing(_bun.cli.UpgradeCommand.Bun__githubBaselineURL.ptr);
+    if (comptime @hasDecl(_bun, "cli")) {
+        if (Environment.isX64 and Environment.enableSIMD and Environment.isPosix) {
+            bun_warn_avx_missing(_bun.cli.UpgradeCommand.Bun__githubBaselineURL.ptr);
+        }
     }
 
     _bun.StackCheck.configureThread();
     _bun.ParentDeathWatchdog.install();
 
-    _bun.cli.Cli.start(_bun.default_allocator);
+    if (comptime @hasDecl(_bun, "cli")) {
+        _bun.cli.Cli.start(_bun.default_allocator);
+    }
     _bun.Global.exit(0);
 }
 

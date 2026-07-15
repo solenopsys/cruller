@@ -336,7 +336,7 @@ pub fn NewHTTPUpgradeClient(comptime ssl: bool) type {
                     // +1 for cpp_websocket
                     client.ref();
                     return client;
-                } else {
+                } else |_| {
                     client.deref();
                 }
                 return null;
@@ -374,7 +374,7 @@ pub fn NewHTTPUpgradeClient(comptime ssl: bool) type {
                 // +1 for cpp_websocket
                 out.ref();
                 return out;
-            } else {
+            } else |_| {
                 client.deref();
             }
 
@@ -1413,7 +1413,7 @@ fn buildRequestBody(
     // Build extra headers string, skipping the ones we handle
     var extra_headers_buf = std.array_list.Managed(u8).init(allocator);
     defer extra_headers_buf.deinit();
-    const writer = extra_headers_buf.writer();
+    const writer = bun.compat.listWriter(&extra_headers_buf);
 
     // Add Authorization header from URL credentials if user didn't provide one
     if (!user_authorization) {

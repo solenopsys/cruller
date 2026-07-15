@@ -626,7 +626,7 @@ fn NewPrinter(
 
         symbol_counter: u32 = 0,
 
-        temporary_bindings: std.ArrayListUnmanaged(B.Property) = .{},
+        temporary_bindings: std.ArrayListUnmanaged(B.Property) = .empty,
 
         binary_expression_stack: std.array_list.Managed(BinaryExpressionVisitor) = undefined,
 
@@ -1241,7 +1241,7 @@ fn NewPrinter(
                     {
                         // Reset the temporary bindings array early on
                         var temp_bindings = p.temporary_bindings;
-                        p.temporary_bindings = .{};
+                        p.temporary_bindings = .empty;
                         defer {
                             if (p.temporary_bindings.capacity > 0) {
                                 temp_bindings.deinit(bun.default_allocator);
@@ -6095,7 +6095,7 @@ pub fn printAst(
     if (opts.runtime_transpiler_cache) |cache| {
         var srlz_res = std.array_list.Managed(u8).init(bun.default_allocator);
         defer srlz_res.deinit();
-        if (have_module_info) try opts.module_info.?.asDeserialized().serialize(srlz_res.writer());
+        if (have_module_info) try opts.module_info.?.asDeserialized().serialize(bun.compat.listWriter(&srlz_res));
         cache.put(printer.writer.ctx.getWritten(), if (source_maps_chunk) |chunk| chunk.buffer.list.items else "", srlz_res.items);
     }
 

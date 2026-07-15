@@ -88,7 +88,7 @@ pub fn fromPicoHttpHeaders(headers: []const picohttp.Header, allocator: std.mem.
     const header_count = headers.len;
     var result = Headers{
         .entries = .{},
-        .buf = .{},
+        .buf = .empty,
         .allocator = allocator,
     };
 

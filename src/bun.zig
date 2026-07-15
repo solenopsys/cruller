@@ -902,7 +902,7 @@ pub fn openDirForIterationOSPath(dir: FD, path_: []const OSPathChar) sys.Maybe(F
     return sys.openatA(dir, path_, O.DIRECTORY | O.CLOEXEC | O.RDONLY, 0);
 }
 
-pub fn openDirAbsolute(path_: []const u8) !std.fs.Dir {
+pub fn openDirAbsolute(path_: []const u8) !std.Io.Dir {
     const fd = if (comptime Environment.isWindows)
         try sys.openDirAtWindowsA(invalid_fd, path_, .{ .iterable = true, .can_rename_or_delete = true, .read_only = true }).unwrap()
     else

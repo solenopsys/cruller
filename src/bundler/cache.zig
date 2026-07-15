@@ -185,7 +185,7 @@ pub const Fs = struct {
         defer {
             if (will_close) {
                 debug("readFileWithAllocator close({f})", .{bun.fs.printHandle(file_handle.handle)});
-                file_handle.close();
+                file_handle.close(bun.compat.io());
             }
         }
 

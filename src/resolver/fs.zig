@@ -597,7 +597,7 @@ pub const FileSystem = struct {
             return bun.env_var.BUN_TMPDIR.getNotEmpty() orelse platformTempDir();
         }
 
-        pub fn openTmpDir(_: *const RealFS) !std.fs.Dir {
+        pub fn openTmpDir(_: *const RealFS) !std.Io.Dir {
             if (comptime Environment.isWindows) {
                 return (try bun.sys.openDirAtWindowsA(bun.invalid_fd, tmpdirPath(), .{
                     .iterable = true,
@@ -1162,7 +1162,7 @@ pub const FileSystem = struct {
             allocator: std.mem.Allocator,
             path: string,
             size_hint: ?usize,
-            std_file: std.fs.File,
+            std_file: std.Io.File,
             comptime use_shared_buffer: bool,
             shared_buffer: *MutableString,
             comptime stream: bool,

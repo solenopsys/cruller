@@ -1289,7 +1289,7 @@ pub fn NewWebSocketClient(comptime ssl: bool) type {
             if (deflate_params) |params| {
                 if (WebSocketDeflate.init(bun.default_allocator, params.*, vm.rareData())) |deflate| {
                     ws.deflate = deflate;
-                } else {
+                } else |_| {
                     ws.deflate = null;
                 }
             }
@@ -1370,7 +1370,7 @@ pub fn NewWebSocketClient(comptime ssl: bool) type {
             if (deflate_params) |params| {
                 if (WebSocketDeflate.init(bun.default_allocator, params.*, globalThis.bunVM().rareData())) |deflate| {
                     ws.deflate = deflate;
-                } else {
+                } else |_| {
                     ws.deflate = null;
                 }
             }

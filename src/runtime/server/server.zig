@@ -3,7 +3,6 @@ const ctxLog = Output.scoped(.RequestContext, .visible);
 
 pub const WebSocketServerContext = @import("./WebSocketServerContext.zig");
 pub const HTTPStatusText = @import("./HTTPStatusText.zig");
-pub const HTMLBundle = @import("./HTMLBundle.zig");
 
 pub fn writeStatus(comptime ssl: bool, resp_ptr: ?*uws.NewApp(ssl).Response, status: u16) void {
     if (resp_ptr) |resp| {
@@ -28,23 +27,11 @@ pub const AnyRoute = union(enum) {
     static: *StaticRoute,
     /// Serve a file from disk
     file: *FileRoute,
-    /// Bundle an HTML import
-    /// import html from "./index.html";
-    /// "/": html,
-    html: bun.ptr.RefPtr(HTMLBundle.Route),
-    /// Use file system routing.
-    /// "/*": {
-    ///   "dir": import.meta.resolve("./pages"),
-    ///   "style": "nextjs-pages",
-    /// }
-    framework_router: bun.bake.FrameworkRouter.Type.Index,
 
     pub fn memoryCost(this: AnyRoute) usize {
         return switch (this) {
             .static => |static_route| static_route.memoryCost(),
             .file => |file_route| file_route.memoryCost(),
-            .html => |html_bundle_route| html_bundle_route.data.memoryCost(),
-            .framework_router => @sizeOf(bun.bake.Framework.FileSystemRouterType),
         };
     }
 
@@ -52,8 +39,6 @@ pub const AnyRoute = union(enum) {
         switch (this) {
             .static => |static_route| static_route.server = server,
             .file => |file_route| file_route.server = server,
-            .html => |html_bundle_route| html_bundle_route.server = server,
-            .framework_router => {}, // DevServer contains .server field
         }
     }
 
@@ -61,8 +46,6 @@ pub const AnyRoute = union(enum) {
         switch (this) {
             .static => |static_route| static_route.deref(),
             .file => |file_route| file_route.deref(),
-            .html => |html_bundle_route| html_bundle_route.deref(),
-            .framework_router => {}, // not reference counted
         }
     }
 
@@ -70,91 +53,7 @@ pub const AnyRoute = union(enum) {
         switch (this) {
             .static => |static_route| static_route.ref(),
             .file => |file_route| file_route.ref(),
-            .html => |html_bundle_route| html_bundle_route.ref(),
-            .framework_router => {}, // not reference counted
         }
-    }
-
-    fn bundledHTMLManifestItemFromJS(argument: jsc.JSValue, index_path: []const u8, init_ctx: *ServerInitContext) bun.JSError!?AnyRoute {
-        if (!argument.isObject()) return null;
-
-        var path_string = try bun.String.fromJS(try argument.get(init_ctx.global, "path") orelse return null, init_ctx.global);
-        defer path_string.deref();
-        var path = jsc.Node.PathOrFileDescriptor{ .path = try jsc.Node.PathLike.fromBunString(init_ctx.global, &path_string, false, bun.default_allocator) };
-        defer path.deinit();
-
-        // Construct the route by stripping paths above the root.
-        //
-        //    "./index-abc.js" -> "/index-abc.js"
-        //    "../index-abc.js" -> "/index-abc.js"
-        //    "/index-abc.js" -> "/index-abc.js"
-        //    "index-abc.js" -> "/index-abc.js"
-        //
-        const cwd = if (bun.StandaloneModuleGraph.isBunStandaloneFilePath(path.path.slice()))
-            bun.StandaloneModuleGraph.targetBasePublicPath(bun.Environment.os, "root/")
-        else
-            bun.fs.FileSystem.instance.top_level_dir;
-
-        const abs_path = bun.fs.FileSystem.instance.abs(&[_][]const u8{path.path.slice()});
-        var relative_path = bun.fs.FileSystem.instance.relative(cwd, abs_path);
-
-        if (strings.hasPrefixComptime(relative_path, "./")) {
-            relative_path = relative_path[2..];
-        } else if (strings.hasPrefixComptime(relative_path, "../")) {
-            while (strings.hasPrefixComptime(relative_path, "../")) {
-                relative_path = relative_path[3..];
-            }
-        }
-        const is_index_route = bun.strings.eql(path.path.slice(), index_path);
-        var builder = std.array_list.Managed(u8).init(bun.default_allocator);
-        defer builder.deinit();
-        if (!strings.hasPrefixComptime(relative_path, "/")) {
-            try builder.append('/');
-        }
-
-        try builder.appendSlice(relative_path);
-
-        const fetch_headers = try jsc.WebCore.FetchHeaders.createFromJS(init_ctx.global, try argument.get(init_ctx.global, "headers") orelse return null);
-        defer if (fetch_headers) |headers| headers.deref();
-        if (init_ctx.global.hasException()) return error.JSError;
-
-        const route = try fromOptions(init_ctx.global, fetch_headers, &path);
-
-        if (is_index_route) {
-            return route;
-        }
-
-        var methods = HTTP.Method.Optional{ .method = .initEmpty() };
-        methods.insert(.GET);
-        methods.insert(.HEAD);
-
-        try init_ctx.user_routes.append(.{
-            .path = try builder.toOwnedSlice(),
-            .route = route,
-            .method = methods,
-        });
-        return null;
-    }
-
-    /// This is the JS representation of an HTMLImportManifest
-    ///
-    /// See ./src/bundler/HTMLImportManifest.zig
-    fn bundledHTMLManifestFromJS(argument: jsc.JSValue, init_ctx: *ServerInitContext) bun.JSError!?AnyRoute {
-        if (!argument.isObject()) return null;
-
-        const index = try argument.getOptional(init_ctx.global, "index", ZigString.Slice) orelse return null;
-        defer index.deinit();
-
-        const files = try argument.getArray(init_ctx.global, "files") orelse return null;
-        var iter = try files.arrayIterator(init_ctx.global);
-        var html_route: ?AnyRoute = null;
-        while (try iter.next()) |file_entry| {
-            if (try bundledHTMLManifestItemFromJS(file_entry, index.slice(), init_ctx)) |item| {
-                html_route = item;
-            }
-        }
-
-        return html_route;
     }
 
     pub fn fromOptions(global: *jsc.JSGlobalObject, headers: ?*jsc.WebCore.FetchHeaders, path: *jsc.Node.PathOrFileDescriptor) !AnyRoute {
@@ -189,83 +88,12 @@ pub const AnyRoute = union(enum) {
         return AnyRoute{ .static = StaticRoute.initFromAnyBlob(&.{ .Blob = blob }, .{ .server = null, .headers = headers }) };
     }
 
-    pub fn htmlRouteFromJS(argument: jsc.JSValue, init_ctx: *ServerInitContext) bun.JSError!?AnyRoute {
-        if (argument.as(HTMLBundle)) |html_bundle| {
-            const entry = bun.handleOom(init_ctx.dedupe_html_bundle_map.getOrPut(html_bundle));
-            if (!entry.found_existing) {
-                entry.value_ptr.* = HTMLBundle.Route.init(html_bundle);
-                return .{ .html = entry.value_ptr.* };
-            } else {
-                return .{ .html = entry.value_ptr.dupeRef() };
-            }
-        }
-
-        if (try bundledHTMLManifestFromJS(argument, init_ctx)) |html_route| {
-            return html_route;
-        }
-
-        return null;
-    }
-
-    pub const ServerInitContext = struct {
-        arena: std.heap.ArenaAllocator,
-        dedupe_html_bundle_map: std.AutoHashMap(*HTMLBundle, bun.ptr.RefPtr(HTMLBundle.Route)),
-        js_string_allocations: bun.bake.StringRefList,
-        global: *jsc.JSGlobalObject,
-        framework_router_list: std.array_list.Managed(bun.bake.Framework.FileSystemRouterType),
-        user_routes: *std.array_list.Managed(ServerConfig.StaticRouteEntry),
-    };
-
     pub fn fromJS(
         global: *jsc.JSGlobalObject,
         path: []const u8,
         argument: jsc.JSValue,
-        init_ctx: *ServerInitContext,
     ) bun.JSError!?AnyRoute {
-        if (try AnyRoute.htmlRouteFromJS(argument, init_ctx)) |html_route| {
-            return html_route;
-        }
-
-        if (argument.isObject()) {
-            const FrameworkRouter = bun.bake.FrameworkRouter;
-            if (try argument.getOptional(global, "dir", bun.String.Slice)) |dir| {
-                var alloc = init_ctx.js_string_allocations;
-                const relative_root = alloc.track(dir);
-
-                var style: FrameworkRouter.Style = if (try argument.get(global, "style")) |style|
-                    try FrameworkRouter.Style.fromJS(style, global)
-                else
-                    .nextjs_pages;
-                errdefer style.deinit();
-
-                if (!bun.strings.endsWith(path, "/*")) {
-                    return global.throwInvalidArguments("To mount a directory, make sure the path ends in `/*`", .{});
-                }
-
-                try init_ctx.framework_router_list.append(.{
-                    .root = relative_root,
-                    .style = style,
-
-                    // trim the /*
-                    .prefix = if (path.len == 2) "/" else path[0 .. path.len - 2],
-
-                    // TODO: customizable framework option.
-                    .entry_client = "bun-framework-react/client.tsx",
-                    .entry_server = "bun-framework-react/server.tsx",
-                    .ignore_underscores = true,
-                    .ignore_dirs = &.{ "node_modules", ".git" },
-                    .extensions = &.{ ".tsx", ".jsx" },
-                    .allow_layouts = true,
-                });
-
-                const limit = std.math.maxInt(@typeInfo(FrameworkRouter.Type.Index).@"enum".tag_type);
-                if (init_ctx.framework_router_list.items.len > limit) {
-                    return global.throwInvalidArguments("Too many framework routers. Maximum is {d}.", .{limit});
-                }
-                return .{ .framework_router = .init(@intCast(init_ctx.framework_router_list.items.len - 1)) };
-            }
-        }
-
+        _ = path;
         if (try FileRoute.fromJS(global, argument)) |file_route| {
             return .{ .file = file_route };
         }
@@ -276,239 +104,6 @@ pub const AnyRoute = union(enum) {
 pub const ServerConfig = @import("./ServerConfig.zig");
 pub const ServerWebSocket = @import("./ServerWebSocket.zig");
 pub const NodeHTTPResponse = @import("./NodeHTTPResponse.zig");
-
-/// State machine to handle loading plugins asynchronously. This structure is not thread-safe.
-const ServePlugins = struct {
-    state: State,
-    ref_count: RefCount,
-
-    /// Reference count is incremented while there are other objects that are waiting on plugin loads.
-    const RefCount = bun.ptr.RefCount(@This(), "ref_count", deinit, .{});
-    pub const ref = RefCount.ref;
-    pub const deref = RefCount.deref;
-
-    pub const State = union(enum) {
-        unqueued: []const []const u8,
-        pending: struct {
-            /// Promise may be empty if the plugin load finishes synchronously.
-            plugin: *bun.jsc.API.JSBundler.Plugin,
-            promise: jsc.JSPromise.Strong,
-            html_bundle_routes: std.ArrayListUnmanaged(*HTMLBundle.Route),
-            dev_server: ?*bun.bake.DevServer,
-        },
-        loaded: *bun.jsc.API.JSBundler.Plugin,
-        /// Error information is not stored as it is already reported.
-        err,
-    };
-
-    pub const GetOrStartLoadResult = union(enum) {
-        /// null = no plugins, used by server implementation
-        ready: ?*bun.jsc.API.JSBundler.Plugin,
-        pending,
-        err,
-    };
-
-    pub const Callback = union(enum) {
-        html_bundle_route: *HTMLBundle.Route,
-        dev_server: *bun.bake.DevServer,
-    };
-
-    pub fn init(plugins: []const []const u8) *ServePlugins {
-        return bun.new(ServePlugins, .{ .ref_count = .init(), .state = .{ .unqueued = plugins } });
-    }
-
-    fn deinit(this: *ServePlugins) void {
-        switch (this.state) {
-            .unqueued => {},
-            .pending => assert(false), // should have one ref while pending!
-            .loaded => |loaded| loaded.deinit(),
-            .err => {},
-        }
-        bun.destroy(this);
-    }
-
-    pub fn getOrStartLoad(this: *ServePlugins, global: *jsc.JSGlobalObject, cb: Callback) bun.JSError!GetOrStartLoadResult {
-        sw: switch (this.state) {
-            .unqueued => {
-                try this.loadAndResolvePlugins(global);
-                continue :sw this.state; // could jump to any branch if synchronously resolved
-            },
-            .pending => |*pending| {
-                switch (cb) {
-                    .html_bundle_route => |route| {
-                        route.ref();
-                        try pending.html_bundle_routes.append(bun.default_allocator, route);
-                    },
-                    .dev_server => |server| {
-                        assert(pending.dev_server == null or pending.dev_server == server); // one dev server per server
-                        pending.dev_server = server;
-                    },
-                }
-                return .pending;
-            },
-            .loaded => |plugins| return .{ .ready = plugins },
-            .err => return .err,
-        }
-    }
-
-    extern fn JSBundlerPlugin__loadAndResolvePluginsForServe(
-        plugin: *bun.jsc.API.JSBundler.Plugin,
-        plugins: jsc.JSValue,
-        bunfig_folder: jsc.JSValue,
-    ) JSValue;
-
-    fn loadAndResolvePlugins(this: *ServePlugins, global: *jsc.JSGlobalObject) bun.JSError!void {
-        bun.assert(this.state == .unqueued);
-        const plugin_list = this.state.unqueued;
-        const bunfig_folder = bun.path.dirname(global.bunVM().transpiler.options.bunfig_path, .auto);
-
-        this.ref();
-        defer this.deref();
-
-        const plugin = bun.jsc.API.JSBundler.Plugin.create(global, .browser);
-        var sfb = std.heap.stackFallback(@sizeOf(bun.String) * 4, bun.default_allocator);
-        const alloc = sfb.get();
-        const bunstring_array = bun.handleOom(alloc.alloc(bun.String, plugin_list.len));
-        defer alloc.free(bunstring_array);
-        for (plugin_list, bunstring_array) |raw_plugin, *out| {
-            out.* = bun.String.init(raw_plugin);
-        }
-        const plugin_js_array = try bun.String.toJSArray(global, bunstring_array);
-        const bunfig_folder_bunstr = try bun.String.createUTF8ForJS(global, bunfig_folder);
-
-        this.state = .{ .pending = .{
-            .promise = jsc.JSPromise.Strong.init(global),
-            .plugin = plugin,
-            .html_bundle_routes = .empty,
-            .dev_server = null,
-        } };
-
-        global.bunVM().eventLoop().enter();
-        const result = try bun.jsc.fromJSHostCall(global, @src(), JSBundlerPlugin__loadAndResolvePluginsForServe, .{ plugin, plugin_js_array, bunfig_folder_bunstr });
-        global.bunVM().eventLoop().exit();
-
-        // handle the case where js synchronously throws an error
-        if (global.tryTakeException()) |e| {
-            handleOnReject(this, global, e);
-            return;
-        }
-
-        if (!result.isEmptyOrUndefinedOrNull()) {
-            // handle the case where js returns a promise
-            if (result.asAnyPromise()) |promise| {
-                switch (promise.status()) {
-                    // promise not fulfilled yet
-                    .pending => {
-                        this.ref();
-                        const promise_value = promise.asValue();
-                        this.state.pending.promise.strong.set(global, promise_value);
-                        try promise_value.then(global, this, onResolveImpl, onRejectImpl);
-                        return;
-                    },
-                    .fulfilled => {
-                        handleOnResolve(this);
-                        return;
-                    },
-                    .rejected => {
-                        const value = promise.result(global.vm());
-                        handleOnReject(this, global, value);
-                        return;
-                    },
-                }
-            }
-
-            if (result.toError()) |e| {
-                handleOnReject(this, global, e);
-            } else {
-                handleOnResolve(this);
-            }
-        }
-    }
-
-    pub const onResolve = jsc.toJSHostFn(onResolveImpl);
-    pub const onReject = jsc.toJSHostFn(onRejectImpl);
-
-    pub fn onResolveImpl(_: *jsc.JSGlobalObject, callframe: *jsc.CallFrame) bun.JSError!JSValue {
-        ctxLog("onResolve", .{});
-
-        const plugins_result, const plugins_js = callframe.argumentsAsArray(2);
-        var plugins = plugins_js.asPromisePtr(ServePlugins);
-        defer plugins.deref();
-        plugins_result.ensureStillAlive();
-
-        handleOnResolve(plugins);
-
-        return .js_undefined;
-    }
-
-    pub fn handleOnResolve(this: *ServePlugins) void {
-        bun.assert(this.state == .pending);
-        const pending = &this.state.pending;
-        const plugin = pending.plugin;
-        const dev_server = pending.dev_server;
-        var html_bundle_routes = pending.html_bundle_routes;
-        pending.html_bundle_routes = .empty;
-        defer html_bundle_routes.deinit(bun.default_allocator);
-
-        pending.promise.deinit();
-
-        this.state = .{ .loaded = plugin };
-
-        for (html_bundle_routes.items) |route| {
-            bun.handleOom(route.onPluginsResolved(plugin));
-            route.deref();
-        }
-        if (dev_server) |server| {
-            bun.handleOom(server.onPluginsResolved(plugin));
-        }
-    }
-
-    pub fn onRejectImpl(globalThis: *jsc.JSGlobalObject, callframe: *jsc.CallFrame) bun.JSError!JSValue {
-        ctxLog("onReject", .{});
-
-        const error_js, const plugin_js = callframe.argumentsAsArray(2);
-        const plugins = plugin_js.asPromisePtr(ServePlugins);
-        defer plugins.deref();
-        handleOnReject(plugins, globalThis, error_js);
-
-        return .js_undefined;
-    }
-
-    pub fn handleOnReject(this: *ServePlugins, global: *jsc.JSGlobalObject, err: JSValue) void {
-        bun.assert(this.state == .pending);
-        const pending = &this.state.pending;
-        const dev_server = pending.dev_server;
-        var html_bundle_routes = pending.html_bundle_routes;
-        pending.html_bundle_routes = .empty;
-        defer html_bundle_routes.deinit(bun.default_allocator);
-        pending.plugin.deinit();
-        pending.promise.deinit();
-
-        this.state = .err;
-
-        for (html_bundle_routes.items) |route| {
-            bun.handleOom(route.onPluginsRejected());
-            route.deref();
-        }
-        if (dev_server) |server| {
-            bun.handleOom(server.onPluginsRejected());
-        }
-
-        Output.errGeneric("Failed to load plugins for Bun.serve:", .{});
-        global.bunVM().runErrorHandler(err, null);
-    }
-
-    comptime {
-        @export(&onResolve, .{ .name = "BunServe__onResolvePlugins" });
-        @export(&onReject, .{ .name = "BunServe__onRejectPlugins" });
-    }
-};
-
-const PluginsResult = union(enum) {
-    pending,
-    found: ?*bun.jsc.API.JSBundler.Plugin,
-    err,
-};
 
 pub fn NewServer(protocol_enum: enum { http, https }, development_kind: enum { debug, production }) type {
     return struct {
@@ -565,10 +160,6 @@ pub fn NewServer(protocol_enum: enum { http, https }, development_kind: enum { d
             has_handled_all_closed_promise: bool = false,
         } = .{},
 
-        plugins: ?*ServePlugins = null,
-
-        dev_server: ?*bun.bake.DevServer,
-
         /// These associate a route to the index in RouteList.cpp.
         /// User routes may get applied multiple times due to SNI.
         /// So we have to store it.
@@ -603,22 +194,6 @@ pub fn NewServer(protocol_enum: enum { http, https }, development_kind: enum { d
                 this.route.deinit();
             }
         };
-
-        /// Returns:
-        /// - .ready if no plugin has to be loaded
-        /// - .err if there is a cached failure. Currently, this requires restarting the entire server.
-        /// - .pending if `callback` was stored. It will call `onPluginsResolved` or `onPluginsRejected` later.
-        pub fn getOrLoadPlugins(server: *ThisServer, callback: ServePlugins.Callback) ServePlugins.GetOrStartLoadResult {
-            if (server.plugins) |p| {
-                return p.getOrStartLoad(server.globalThis, callback) catch |err| switch (err) {
-                    error.JSError => std.debug.panic("unhandled exception from ServePlugins.getStartOrLoad", .{}),
-                    error.OutOfMemory => bun.outOfMemory(),
-                    error.JSTerminated => std.debug.panic("unhandled exception from ServePlugins.getStartOrLoad", .{}),
-                };
-            }
-            // no plugins
-            return .{ .ready = null };
-        }
 
         pub fn doSubscriberCount(this: *ThisServer, globalThis: *jsc.JSGlobalObject, callframe: *jsc.CallFrame) bun.JSError!jsc.JSValue {
             const arguments = callframe.arguments_old(1);
@@ -658,8 +233,7 @@ pub fn NewServer(protocol_enum: enum { http, https }, development_kind: enum { d
         pub fn memoryCost(this: *ThisServer) usize {
             return @sizeOf(ThisServer) +
                 this.base_url_string_for_joining.len +
-                this.config.memoryCost() +
-                (if (this.dev_server) |dev| dev.memoryCost() else 0);
+                this.config.memoryCost();
         }
 
         pub fn timeout(this: *ThisServer, globalObject: *jsc.JSGlobalObject, callframe: *jsc.CallFrame) bun.JSError!jsc.JSValue {
@@ -1143,13 +717,6 @@ pub fn NewServer(protocol_enum: enum { http, https }, development_kind: enum { d
                 }
             }
 
-            // These get re-applied when we set the static routes again.
-            if (this.dev_server) |dev_server| {
-                // Prevent a use-after-free in the hash table keys.
-                dev_server.html_router.clear();
-                dev_server.html_router.fallback = null;
-            }
-
             var static_routes = this.config.static_routes;
             this.config.static_routes = .init(bun.default_allocator);
             for (static_routes.items) |*route| {
@@ -1628,18 +1195,6 @@ pub fn NewServer(protocol_enum: enum { http, https }, development_kind: enum { d
                 }
                 this.unref();
 
-                // Detach DevServer. This is needed because there are aggressive
-                // tests that check for DevServer memory soundness. This reveals
-                // a larger problem, that it seems that some objects like Server
-                // should be detachable from their JSValue, so that when the
-                // native handle is done, keeping the JS binding doesn't use
-                // `this.memoryCost()` bytes.
-                if (this.dev_server) |dev| {
-                    this.dev_server = null;
-                    if (this.app) |app| app.clearRoutes();
-                    dev.deinit();
-                }
-
                 // Only free the memory if the JS reference has been freed too
                 if (this.js_value == .finalized) {
                     this.scheduleDeinit();
@@ -1777,14 +1332,6 @@ pub fn NewServer(protocol_enum: enum { http, https }, development_kind: enum { d
                 app.destroy();
             }
 
-            if (this.dev_server) |dev_server| {
-                dev_server.deinit();
-            }
-
-            if (this.plugins) |plugins| {
-                plugins.deref();
-            }
-
             bun.destroy(this);
         }
 
@@ -1792,26 +1339,12 @@ pub fn NewServer(protocol_enum: enum { http, https }, development_kind: enum { d
             const base_url = try bun.default_allocator.dupe(u8, strings.trim(config.base_url.href, "/"));
             errdefer bun.default_allocator.free(base_url);
 
-            const dev_server = if (config.bake) |*bake_options|
-                try bun.bake.DevServer.init(.{
-                    .arena = bake_options.arena.allocator(),
-                    .root = bake_options.root,
-                    .framework = bake_options.framework,
-                    .bundler_options = bake_options.bundler_options,
-                    .vm = global.bunVM(),
-                    .broadcast_console_log_from_browser_to_server = config.broadcast_console_log_from_browser_to_server_for_bake,
-                })
-            else
-                null;
-            errdefer if (dev_server) |d| d.deinit();
-
             var server = ThisServer.new(.{
                 .globalThis = global,
                 .config = config.*,
                 .base_url_string_for_joining = base_url,
                 .vm = jsc.VirtualMachine.get(),
                 .allocator = bun.default_allocator,
-                .dev_server = dev_server,
             });
 
             if (RequestContext.pool == null) {
@@ -2040,7 +1573,7 @@ pub fn NewServer(protocol_enum: enum { http, https }, development_kind: enum { d
                 &writer,
                 bun.Global.BunInfo.generate(*Transpiler, &jsc.VirtualMachine.get().transpiler, allocator) catch unreachable,
                 source,
-                .{ .mangled_props = null },
+                .{},
             ) catch unreachable;
 
             resp.writeStatus("200 OK");
@@ -2664,90 +2197,10 @@ pub fn NewServer(protocol_enum: enum { http, https }, development_kind: enum { d
             ctx.toAsync(req, request_object);
         }
 
-        // https://chromium.googlesource.com/devtools/devtools-frontend/+/main/docs/ecosystem/automatic_workspace_folders.md
-        fn onChromeDevToolsJSONRequest(this: *ThisServer, req: *uws.Request, resp: *App.Response) void {
-            if (comptime Environment.enable_logs)
-                httplog("{s} - {s}", .{ req.method(), req.url() });
-
-            const authorized = brk: {
-                if (this.dev_server == null)
-                    break :brk false;
-
-                if (resp.getRemoteSocketInfo()) |*address| {
-                    // IPv4 loopback addresses
-                    if (strings.startsWith(address.ip, "127.")) {
-                        break :brk true;
-                    }
-
-                    // IPv6 loopback addresses
-                    if (strings.startsWith(address.ip, "::ffff:127.") or
-                        strings.startsWith(address.ip, "::1") or
-                        strings.eqlComptime(address.ip, "0:0:0:0:0:0:0:1"))
-                    {
-                        break :brk true;
-                    }
-                }
-
-                break :brk false;
-            };
-
-            if (!authorized) {
-                req.setYield(true);
-                return;
-            }
-
-            // They need a 16 byte uuid. It needs to be somewhat consistent. We don't want to store this field anywhere.
-
-            // So we first use a hash of the main field:
-            const first_hash_segment: [8]u8 = brk: {
-                const buffer = bun.path_buffer_pool.get();
-                defer bun.path_buffer_pool.put(buffer);
-                const main = jsc.VirtualMachine.get().main;
-                const len = @min(main.len, buffer.len);
-                break :brk @bitCast(bun.hash(bun.strings.copyLowercase(main[0..len], buffer[0..len])));
-            };
-
-            // And then we use a hash of their project root directory:
-            const second_hash_segment: [8]u8 = brk: {
-                const buffer = bun.path_buffer_pool.get();
-                defer bun.path_buffer_pool.put(buffer);
-                const root = this.dev_server.?.root;
-                const len = @min(root.len, buffer.len);
-                break :brk @bitCast(bun.hash(bun.strings.copyLowercase(root[0..len], buffer[0..len])));
-            };
-
-            // We combine it together to get a 16 byte uuid.
-            const hash_bytes: [16]u8 = first_hash_segment ++ second_hash_segment;
-            const uuid = bun.UUID.initWith(&hash_bytes);
-
-            // interface DevToolsJSON {
-            //   workspace?: {
-            //     root: string,
-            //     uuid: string,
-            //   }
-            // }
-            const json_string = std.fmt.allocPrint(bun.default_allocator, "{{ \"workspace\": {{ \"root\": {f}, \"uuid\": \"{f}\" }} }}", .{
-                bun.fmt.formatJSONStringUTF8(this.dev_server.?.root, .{}),
-                uuid,
-            }) catch |err| bun.handleOom(err);
-            defer bun.default_allocator.free(json_string);
-
-            resp.writeStatus("200 OK");
-            resp.writeHeader("Content-Type", "application/json");
-            resp.end(json_string, resp.shouldCloseConnection());
-        }
-
         fn setRoutes(this: *ThisServer) jsc.JSValue {
             var route_list_value = jsc.JSValue.zero;
             const app = this.app.?;
             const any_server = AnyServer.from(this);
-            const dev_server = this.dev_server;
-
-            // https://chromium.googlesource.com/devtools/devtools-frontend/+/main/docs/ecosystem/automatic_workspace_folders.md
-            // Only enable this when we're using the dev server.
-            var should_add_chrome_devtools_json_route = debug_mode and this.config.allow_hot and dev_server != null and this.config.enable_chrome_devtools_automatic_workspace_folders;
-            const chrome_devtools_route = "/.well-known/appspecific/com.chrome.devtools.json";
-
             // --- 1. Handle user_routes_to_build (dynamic JS routes) ---
             // (This part remains conceptually the same: populate this.user_routes and route_list_value
             //  Crucially, ServerConfig.fromJS must ensure `route.method` is correctly .specific or .any)
@@ -2795,12 +2248,6 @@ pub fn NewServer(protocol_enum: enum { http, https }, development_kind: enum { d
                 const is_star_path = strings.eqlComptime(user_route.route.path, "/*");
                 if (is_star_path) {
                     has_any_user_route_for_star_path = true;
-                }
-
-                if (should_add_chrome_devtools_json_route) {
-                    if (strings.eqlComptime(user_route.route.path, chrome_devtools_route) or strings.hasPrefix(user_route.route.path, "/.well-known/")) {
-                        should_add_chrome_devtools_json_route = false;
-                    }
                 }
 
                 // Register HTTP routes
@@ -2864,7 +2311,6 @@ pub fn NewServer(protocol_enum: enum { http, https }, development_kind: enum { d
             }
 
             // --- 5. Register static routes & Track "/*" Coverage ---
-            var needs_plugins = dev_server != null;
             var has_static_route_for_star_path = false;
 
             if (this.config.static_routes.items.len > 0) {
@@ -2881,12 +2327,6 @@ pub fn NewServer(protocol_enum: enum { http, https }, development_kind: enum { d
                         }
                     }
 
-                    if (should_add_chrome_devtools_json_route) {
-                        if (strings.eqlComptime(entry.path, chrome_devtools_route) or strings.hasPrefix(entry.path, "/.well-known/")) {
-                            should_add_chrome_devtools_json_route = false;
-                        }
-                    }
-
                     switch (entry.route) {
                         .static => |static_route| {
                             ServerConfig.applyStaticRoute(any_server, ssl_enabled, app, *StaticRoute, static_route, entry.path, entry.method);
@@ -2898,25 +2338,6 @@ pub fn NewServer(protocol_enum: enum { http, https }, development_kind: enum { d
                             if (comptime has_h3) if (this.h3_app) |h3_app|
                                 ServerConfig.applyStaticRouteH3(any_server, h3_app, *FileRoute, file_route, entry.path, entry.method);
                         },
-                        .html => |html_bundle_route| {
-                            ServerConfig.applyStaticRoute(any_server, ssl_enabled, app, *HTMLBundle.Route, html_bundle_route.data, entry.path, entry.method);
-                            if (comptime has_h3) if (this.h3_app) |h3_app|
-                                ServerConfig.applyStaticRouteH3(any_server, h3_app, *HTMLBundle.Route, html_bundle_route.data, entry.path, entry.method);
-                            if (dev_server) |dev| {
-                                bun.handleOom(dev.html_router.put(dev.allocator(), entry.path, html_bundle_route.data));
-                            }
-                            needs_plugins = true;
-                        },
-                        .framework_router => {},
-                    }
-                }
-            }
-
-            // --- 6. Initialize plugins if needed ---
-            if (needs_plugins and this.plugins == null) {
-                if (this.vm.transpiler.options.serve_plugins) |serve_plugins_config| {
-                    if (serve_plugins_config.len > 0) {
-                        this.plugins = ServePlugins.init(serve_plugins_config);
                     }
                 }
             }
@@ -2931,17 +2352,6 @@ pub fn NewServer(protocol_enum: enum { http, https }, development_kind: enum { d
             // as full.
             const h3_star_covered = star_methods_covered_by_user;
             _ = &h3_star_covered;
-
-            // --- 8. Handle DevServer routes & Track "/*" Coverage ---
-            var has_dev_server_for_star_path = false;
-            if (dev_server) |dev| {
-                // dev.setRoutes might register its own "/*" HTTP handler
-                has_dev_server_for_star_path = bun.handleOom(dev.setRoutes(this));
-                if (has_dev_server_for_star_path) {
-                    // Assume dev server "/*" covers all methods if it exists
-                    star_methods_covered_by_user = .initFull();
-                }
-            }
 
             // Setup user websocket fallback route aka fetch function if fetch is not provided will respond with 403.
             if (!has_any_ws_route_for_star_path) {
@@ -2959,7 +2369,7 @@ pub fn NewServer(protocol_enum: enum { http, https }, development_kind: enum { d
             if (star_methods_covered_by_user.eql(bun.http.Method.Set.initFull())) {
                 // User/Static/Dev has already provided a "/*" handler for ALL methods.
                 // No further global "/*" HTTP fallback needed.
-            } else if (has_any_user_route_for_star_path or has_static_route_for_star_path or has_dev_server_for_star_path) {
+            } else if (has_any_user_route_for_star_path or has_static_route_for_star_path) {
                 // A "/*" route exists, but doesn't cover all methods.
                 // Apply the global handler to the *remaining* methods for "/*".
                 // So we flip the bits for the methods that are not covered by the user/static/dev routes
@@ -3010,10 +2420,6 @@ pub fn NewServer(protocol_enum: enum { http, https }, development_kind: enum { d
                         h3_app.any("/*", *ThisServer, this, onH3404);
                     }
                 }
-            }
-
-            if (should_add_chrome_devtools_json_route) {
-                app.get(chrome_devtools_route, *ThisServer, this, onChromeDevToolsJSONRequest);
             }
 
             // If onNodeHTTPRequest is configured, it might be needed for Node.js compatibility layer
@@ -3381,27 +2787,15 @@ pub const AnyServer = struct {
         switch (this.ptr.tag()) {
             Ptr.case(HTTPServer) => {
                 this.ptr.as(HTTPServer).inspector_server_id = id;
-                if (this.ptr.as(HTTPServer).dev_server) |dev_server| {
-                    dev_server.inspector_server_id = id;
-                }
             },
             Ptr.case(HTTPSServer) => {
                 this.ptr.as(HTTPSServer).inspector_server_id = id;
-                if (this.ptr.as(HTTPSServer).dev_server) |dev_server| {
-                    dev_server.inspector_server_id = id;
-                }
             },
             Ptr.case(DebugHTTPServer) => {
                 this.ptr.as(DebugHTTPServer).inspector_server_id = id;
-                if (this.ptr.as(DebugHTTPServer).dev_server) |dev_server| {
-                    dev_server.inspector_server_id = id;
-                }
             },
             Ptr.case(DebugHTTPSServer) => {
                 this.ptr.as(DebugHTTPSServer).inspector_server_id = id;
-                if (this.ptr.as(DebugHTTPSServer).dev_server) |dev_server| {
-                    dev_server.inspector_server_id = id;
-                }
             },
             else => bun.unreachablePanic("Invalid pointer tag", .{}),
         }
@@ -3413,50 +2807,6 @@ pub const AnyServer = struct {
             Ptr.case(HTTPSServer) => this.ptr.as(HTTPSServer).inspector_server_id,
             Ptr.case(DebugHTTPServer) => this.ptr.as(DebugHTTPServer).inspector_server_id,
             Ptr.case(DebugHTTPSServer) => this.ptr.as(DebugHTTPSServer).inspector_server_id,
-            else => bun.unreachablePanic("Invalid pointer tag", .{}),
-        };
-    }
-
-    pub fn plugins(this: AnyServer) ?*ServePlugins {
-        return switch (this.ptr.tag()) {
-            Ptr.case(HTTPServer) => this.ptr.as(HTTPServer).plugins,
-            Ptr.case(HTTPSServer) => this.ptr.as(HTTPSServer).plugins,
-            Ptr.case(DebugHTTPServer) => this.ptr.as(DebugHTTPServer).plugins,
-            Ptr.case(DebugHTTPSServer) => this.ptr.as(DebugHTTPSServer).plugins,
-            else => bun.unreachablePanic("Invalid pointer tag", .{}),
-        };
-    }
-
-    pub fn getPlugins(this: AnyServer) PluginsResult {
-        return switch (this.ptr.tag()) {
-            Ptr.case(HTTPServer) => this.ptr.as(HTTPServer).getPlugins(),
-            Ptr.case(HTTPSServer) => this.ptr.as(HTTPSServer).getPlugins(),
-            Ptr.case(DebugHTTPServer) => this.ptr.as(DebugHTTPServer).getPlugins(),
-            Ptr.case(DebugHTTPSServer) => this.ptr.as(DebugHTTPSServer).getPlugins(),
-            else => bun.unreachablePanic("Invalid pointer tag", .{}),
-        };
-    }
-
-    pub fn loadAndResolvePlugins(this: AnyServer, bundle: *HTMLBundle.HTMLBundleRoute, raw_plugins: []const []const u8, bunfig_path: []const u8) void {
-        return switch (this.ptr.tag()) {
-            Ptr.case(HTTPServer) => this.ptr.as(HTTPServer).getPluginsAsync(bundle, raw_plugins, bunfig_path),
-            Ptr.case(HTTPSServer) => this.ptr.as(HTTPSServer).getPluginsAsync(bundle, raw_plugins, bunfig_path),
-            Ptr.case(DebugHTTPServer) => this.ptr.as(DebugHTTPServer).getPluginsAsync(bundle, raw_plugins, bunfig_path),
-            Ptr.case(DebugHTTPSServer) => this.ptr.as(DebugHTTPSServer).getPluginsAsync(bundle, raw_plugins, bunfig_path),
-            else => bun.unreachablePanic("Invalid pointer tag", .{}),
-        };
-    }
-
-    /// Returns:
-    /// - .ready if no plugin has to be loaded
-    /// - .err if there is a cached failure. Currently, this requires restarting the entire server.
-    /// - .pending if `callback` was stored. It will call `onPluginsResolved` or `onPluginsRejected` later.
-    pub fn getOrLoadPlugins(server: AnyServer, callback: ServePlugins.Callback) ServePlugins.GetOrStartLoadResult {
-        return switch (server.ptr.tag()) {
-            Ptr.case(HTTPServer) => server.ptr.as(HTTPServer).getOrLoadPlugins(callback),
-            Ptr.case(HTTPSServer) => server.ptr.as(HTTPSServer).getOrLoadPlugins(callback),
-            Ptr.case(DebugHTTPServer) => server.ptr.as(DebugHTTPServer).getOrLoadPlugins(callback),
-            Ptr.case(DebugHTTPSServer) => server.ptr.as(DebugHTTPSServer).getOrLoadPlugins(callback),
             else => bun.unreachablePanic("Invalid pointer tag", .{}),
         };
     }
@@ -3609,16 +2959,6 @@ pub const AnyServer = struct {
             Ptr.case(HTTPSServer) => this.ptr.as(HTTPSServer).app.?.numSubscribers(topic),
             Ptr.case(DebugHTTPServer) => this.ptr.as(DebugHTTPServer).app.?.numSubscribers(topic),
             Ptr.case(DebugHTTPSServer) => this.ptr.as(DebugHTTPSServer).app.?.numSubscribers(topic),
-            else => bun.unreachablePanic("Invalid pointer tag", .{}),
-        };
-    }
-
-    pub fn devServer(this: AnyServer) ?*bun.bake.DevServer {
-        return switch (this.ptr.tag()) {
-            Ptr.case(HTTPServer) => this.ptr.as(HTTPServer).dev_server,
-            Ptr.case(HTTPSServer) => this.ptr.as(HTTPSServer).dev_server,
-            Ptr.case(DebugHTTPServer) => this.ptr.as(DebugHTTPServer).dev_server,
-            Ptr.case(DebugHTTPSServer) => this.ptr.as(DebugHTTPSServer).dev_server,
             else => bun.unreachablePanic("Invalid pointer tag", .{}),
         };
     }

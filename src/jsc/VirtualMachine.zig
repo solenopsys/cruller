@@ -948,7 +948,7 @@ pub fn onExit(this: *VirtualMachine) void {
     while (rare_data.cleanup_hooks.items.len > 0) {
         var hooks = rare_data.cleanup_hooks;
         defer hooks.deinit(bun.default_allocator);
-        rare_data.cleanup_hooks = .{};
+        rare_data.cleanup_hooks = .empty;
         for (hooks.items) |hook| {
             hook.execute();
         }

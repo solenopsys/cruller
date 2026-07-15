@@ -52,9 +52,7 @@ pub fn parse(
         &writer,
         parse_result,
         source,
-        .{
-            .mangled_props = null,
-        },
+        .{},
     ) catch {
         return globalThis.throwValue(try log.toJS(globalThis, default_allocator, "Failed to print toml"));
     };

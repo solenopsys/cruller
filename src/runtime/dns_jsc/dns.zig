@@ -2092,12 +2092,11 @@ pub const Resolver = struct {
 
         this.event_loop_timer.state = .PENDING;
 
-        if (this.getChannelOrError(vm.global)) |channel| {
-            if (this.anyRequestsPending()) {
-                c_ares.ares_process_fd(channel, c_ares.ARES_SOCKET_BAD, c_ares.ARES_SOCKET_BAD);
-                _ = this.addTimer(now);
-            }
-        } else {}
+        const channel = this.getChannelOrError(vm.global) catch return;
+        if (this.anyRequestsPending()) {
+            c_ares.ares_process_fd(channel, c_ares.ARES_SOCKET_BAD, c_ares.ARES_SOCKET_BAD);
+            _ = this.addTimer(now);
+        }
     }
 
     fn anyRequestsPending(this: *Resolver) bool {

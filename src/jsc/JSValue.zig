@@ -464,10 +464,6 @@ pub const JSValue = enum(i64) {
                     return blob;
                 }
 
-                if (jsc.API.BuildArtifact.fromJS(value)) |build| {
-                    return &build.blob;
-                }
-
                 return null;
             }
 

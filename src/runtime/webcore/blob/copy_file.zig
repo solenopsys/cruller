@@ -559,7 +559,7 @@ pub const CopyFile = struct {
             }
 
             // $ bun run foo.js | bun run bar.js
-            if (posix.S.ISFIFO(stat.mode) and posix.S.ISFIFO(this.destination_file_store.mode)) {
+            if (posix.S.ISFIFO(@intCast(stat.mode)) and posix.S.ISFIFO(@intCast(this.destination_file_store.mode))) {
                 if (this.destination_file_store.is_atty orelse false) {
                     this.doCopyFileRange(.splice, true) catch {};
                 } else {
@@ -570,7 +570,7 @@ pub const CopyFile = struct {
                 return;
             }
 
-            if (posix.S.ISREG(stat.mode) or posix.S.ISCHR(stat.mode) or posix.S.ISSOCK(stat.mode)) {
+            if (posix.S.ISREG(@intCast(stat.mode)) or posix.S.ISCHR(@intCast(stat.mode)) or posix.S.ISSOCK(@intCast(stat.mode))) {
                 if (this.destination_file_store.is_atty orelse false) {
                     this.doCopyFileRange(.sendfile, true) catch {};
                 } else {

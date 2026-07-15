@@ -71,7 +71,6 @@ pub fn notifyServerRoutesUpdated(this: *const HTTPServerAgent, server: jsc.API.A
                 .route_id = @intCast(max_id + 1),
                 .path = bun.String.init(route.path),
                 .type = switch (route.route) {
-                    .html => .html,
                     .static => .static,
                     else => .default,
                 },
@@ -79,10 +78,7 @@ pub fn notifyServerRoutesUpdated(this: *const HTTPServerAgent, server: jsc.API.A
                 // TODO:
                 .param_names = null,
                 .param_names_len = 0,
-                .file_path = switch (route.route) {
-                    .html => |html| bun.String.init(html.data.bundle.data.path),
-                    else => .empty,
-                },
+                .file_path = .empty,
             });
             max_id += 1;
         }

@@ -108,6 +108,9 @@ pub fn ArrayHashMapManaged(comptime K: type, comptime V: type, comptime Context:
         pub fn getOrPut(self: *Self, key: K) !GetOrPutResult {
             return self.unmanaged.getOrPut(self.allocator, key);
         }
+        pub fn reIndex(self: *Self) !void {
+            return self.unmanaged.reIndex(self.allocator);
+        }
         pub fn getOrPutValue(self: *Self, key: K, value: V) !GetOrPutResult {
             return self.unmanaged.getOrPutValue(self.allocator, key, value);
         }
@@ -178,6 +181,9 @@ pub fn AutoArrayHashMapManaged(comptime K: type, comptime V: type) type {
         }
         pub fn getOrPut(self: *Self, key: K) !GetOrPutResult {
             return self.unmanaged.getOrPut(self.allocator, key);
+        }
+        pub fn reIndex(self: *Self) !void {
+            return self.unmanaged.reIndex(self.allocator);
         }
         pub fn swapRemove(self: *Self, key: K) bool {
             return self.unmanaged.swapRemove(key);
@@ -438,13 +444,16 @@ fn listWriteFn(comptime L: type) fn (L, []const u8) std.mem.Allocator.Error!usiz
 
 /// 0.15 std.io.FixedBufferStream (writer+reader над срезом).
 pub fn fixedBufferStream(buffer: anytype) FixedBufferStream(@TypeOf(buffer)) {
-    return .{ .buffer = switch (@typeInfo(@TypeOf(buffer))) {
-        .pointer => |ptr| switch (ptr.size) {
-            .one => buffer, // *[N]u8 коэрсится в срез ниже по типу поля
-            else => buffer,
+    return .{
+        .buffer = switch (@typeInfo(@TypeOf(buffer))) {
+            .pointer => |ptr| switch (ptr.size) {
+                .one => buffer, // *[N]u8 коэрсится в срез ниже по типу поля
+                else => buffer,
+            },
+            else => @compileError("fixedBufferStream: ожидается срез или указатель на массив"),
         },
-        else => @compileError("fixedBufferStream: ожидается срез или указатель на массив"),
-    }, .pos = 0 };
+        .pos = 0,
+    };
 }
 
 pub fn FixedBufferStream(comptime BufferPtr: type) type {

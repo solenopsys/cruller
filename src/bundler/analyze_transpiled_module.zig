@@ -256,9 +256,9 @@ pub const ModuleInfo = struct {
             .gpa = allocator,
             .strings_map = .{},
             .strings_buf = .empty,
-            .strings_lens = .{},
+            .strings_lens = .empty,
             .exported_names = .{},
-            .requested_modules = std.AutoArrayHashMap(StringID, FetchParameters).init(allocator),
+            .requested_modules = bun.compat.AutoArrayHashMapManaged(StringID, FetchParameters).init(allocator),
             .buffer = .empty,
             .record_kinds = .empty,
             .flags = .{ .contains_import_meta = false, .is_typescript = is_typescript },
@@ -318,15 +318,15 @@ pub const ModuleInfo = struct {
     /// find any exports marked as 'local' that are actually 'indirect' and fix them
     pub fn finalize(self: *ModuleInfo) !void {
         bun.assert(!self.finalized);
-        var local_name_to_module_name = std.AutoArrayHashMap(StringID, struct { module_name: StringID, import_name: StringID, record_kinds_idx: usize, is_namespace: bool }).init(bun.default_allocator);
-        defer local_name_to_module_name.deinit();
+        var local_name_to_module_name = std.AutoArrayHashMapUnmanaged(StringID, struct { module_name: StringID, import_name: StringID, record_kinds_idx: usize, is_namespace: bool }).empty;
+        defer local_name_to_module_name.deinit(bun.default_allocator);
         {
             var i: usize = 0;
             for (self.record_kinds.items, 0..) |k, idx| {
                 if (k == .import_info_single or k == .import_info_single_type_script) {
-                    try local_name_to_module_name.put(self.buffer.items[i + 2], .{ .module_name = self.buffer.items[i], .import_name = self.buffer.items[i + 1], .record_kinds_idx = idx, .is_namespace = false });
+                    try local_name_to_module_name.put(bun.default_allocator, self.buffer.items[i + 2], .{ .module_name = self.buffer.items[i], .import_name = self.buffer.items[i + 1], .record_kinds_idx = idx, .is_namespace = false });
                 } else if (k == .import_info_namespace) {
-                    try local_name_to_module_name.put(self.buffer.items[i + 2], .{ .module_name = self.buffer.items[i], .import_name = .star_namespace, .record_kinds_idx = idx, .is_namespace = true });
+                    try local_name_to_module_name.put(bun.default_allocator, self.buffer.items[i + 2], .{ .module_name = self.buffer.items[i], .import_name = .star_namespace, .record_kinds_idx = idx, .is_namespace = true });
                 }
                 i += k.len() catch unreachable;
             }

@@ -968,14 +968,11 @@ JSC_DEFINE_HOST_FUNCTION(functionFileURLToPath, (JSC::JSGlobalObject * globalObj
     markdown                                         BunObject_lazyPropCb_wrap_markdown                                  DontDelete|PropertyCallback
     TOML                                           BunObject_lazyPropCb_wrap_TOML                                      DontDelete|PropertyCallback
     YAML                                           BunObject_lazyPropCb_wrap_YAML                                      DontDelete|PropertyCallback
-    Transpiler                                     BunObject_lazyPropCb_wrap_Transpiler                                DontDelete|PropertyCallback
-    embeddedFiles                                  BunObject_lazyPropCb_wrap_embeddedFiles                             DontDelete|PropertyCallback
     S3Client                                       BunObject_lazyPropCb_wrap_S3Client                                  DontDelete|PropertyCallback
     s3                                             BunObject_lazyPropCb_wrap_s3                                        DontDelete|PropertyCallback
     CSRF                                           BunObject_lazyPropCb_wrap_CSRF                                      DontDelete|PropertyCallback
     allocUnsafe                                    BunObject_callback_allocUnsafe                                      DontDelete|Function 1
     argv                                           BunObject_lazyPropCb_wrap_argv                                      DontDelete|PropertyCallback
-    build                                          BunObject_callback_build                                            DontDelete|Function 1
     concatArrayBuffers                             functionConcatTypedArrays                                           DontDelete|Function 3
     connect                                        BunObject_callback_connect                                          DontDelete|Function 1
     cron                                           BunObject_lazyPropCb_wrap_cron                                      DontDelete|PropertyCallback
@@ -1022,7 +1019,6 @@ JSC_DEFINE_HOST_FUNCTION(functionFileURLToPath, (JSC::JSGlobalObject * globalObj
     readableStreamToFormData                       JSBuiltin                                                           Builtin|Function 1
     readableStreamToJSON                           JSBuiltin                                                           Builtin|Function 1
     readableStreamToText                           JSBuiltin                                                           Builtin|Function 1
-    registerMacro                                  BunObject_callback_registerMacro                                    DontEnum|DontDelete|Function 1
     resolve                                        BunObject_callback_resolve                                          DontDelete|Function 1
     resolveSync                                    BunObject_callback_resolveSync                                      DontDelete|Function 1
     revision                                       constructBunRevision                                                ReadOnly|DontDelete|PropertyCallback

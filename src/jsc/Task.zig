@@ -8,8 +8,6 @@ pub const Task = TaggedPointerUnion(.{
     // bzrt-cut: Archive*Task (libarchive вырезан)
     AsyncGlobWalkTask,
     AsyncImageTask,
-    AsyncTransformTask,
-    bun.bake.DevServer.HotReloadEvent,
     // bzrt-cut: bundle_v2.DeferredBatchTask, shell.*.YesTask (bundler/shell вырезаны)
     Chmod,
     Chown,
@@ -143,11 +141,6 @@ pub fn tickQueueWithCount(this: *EventLoop, virtual_machine: *VirtualMachine, co
                 defer image_task.deinit();
                 try image_task.runFromJS();
             },
-            @field(Task.Tag, @typeName(AsyncTransformTask)) => {
-                var transform_task: *AsyncTransformTask = task.get(AsyncTransformTask).?;
-                defer transform_task.deinit();
-                try transform_task.runFromJS();
-            },
             @field(Task.Tag, @typeName(CopyFilePromiseTask)) => {
                 var transform_task: *CopyFilePromiseTask = task.get(CopyFilePromiseTask).?;
                 defer transform_task.deinit();
@@ -177,10 +170,6 @@ pub fn tickQueueWithCount(this: *EventLoop, virtual_machine: *VirtualMachine, co
                 // hot reload runs immediately so it should not drain microtasks
                 counter.* = 0;
                 return;
-            },
-            @field(Task.Tag, @typeName(bun.bake.DevServer.HotReloadEvent)) => {
-                const hmr_task: *bun.bake.DevServer.HotReloadEvent = task.get(bun.bake.DevServer.HotReloadEvent).?;
-                hmr_task.run();
             },
             @field(Task.Tag, @typeName(FSWatchTask)) => {
                 var transform_task: *FSWatchTask = task.get(FSWatchTask).?;
@@ -537,7 +526,6 @@ const NativeZstd = jsc.API.NativeZstd;
 const AsyncImageTask = jsc.API.Image.AsyncImageTask;
 const NativePromiseContextDeferredDerefTask = jsc.API.NativePromiseContext.DeferredDerefTask;
 const AsyncGlobWalkTask = jsc.API.Glob.WalkTask.AsyncGlobWalkTask;
-const AsyncTransformTask = jsc.API.JSTranspiler.TransformTask.AsyncTransformTask;
 
 // bzrt-cut: Archive*Task (libarchive вырезан)
 

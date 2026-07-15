@@ -4048,7 +4048,7 @@ pub const Resolver = struct {
                         }
 
                         const this_dir = fd.stdDir();
-                        var file = bun.FD.fromStdDir(this_dir.openDirZ(bun.pathLiteral("node_modules/.bin"), .{}) catch
+                        var file = bun.FD.fromStdDir(this_dir.openDir(bun.compat.io(), bun.pathLiteral("node_modules/.bin"), .{}) catch
                             break :append_bin_dir);
                         defer file.close();
                         const bin_path = file.getFdPath(bufs(.node_bin_path)) catch break :append_bin_dir;
@@ -4358,7 +4358,6 @@ const Timer = @import("../perf/system_timer.zig").Timer;
 const cache = @import("../bundler/cache.zig");
 const CacheSet = cache.Set;
 
-
 const Fs = @import("./fs.zig");
 const Path = Fs.Path;
 
@@ -4391,8 +4390,12 @@ const Install = struct {
     pub const DependencyID = u32;
     pub const invalid_package_id: u32 = std.math.maxInt(u32);
 };
-const Dependency = struct { pub const Version = struct {}; };
-const PackageManager = struct { pub const WakeHandler = struct {}; };
+const Dependency = struct {
+    pub const Version = struct {};
+};
+const PackageManager = struct {
+    pub const WakeHandler = struct {};
+};
 
 // bzrt: npm-типы
 const Resolution = struct {};

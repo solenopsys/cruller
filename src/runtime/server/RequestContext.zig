@@ -103,11 +103,6 @@ pub fn NewRequestContext(comptime ssl_enabled: bool, comptime debug_mode: bool, 
             }
         }
 
-        pub fn devServer(this: *const RequestContext) ?*bun.bake.DevServer {
-            const server = this.server orelse return null;
-            return server.dev_server;
-        }
-
         pub fn memoryCost(this: *const RequestContext) usize {
             // The Sink and ByteStream aren't owned by this.
             return @sizeOf(RequestContext) + this.request_body_buf.capacity + this.response_buf_owned.capacity + this.blob.memoryCost();
@@ -1657,6 +1652,7 @@ pub fn NewRequestContext(comptime ssl_enabled: bool, comptime debug_mode: bool, 
         }
 
         pub fn handleRejectStream(req: *@This(), globalThis: *jsc.JSGlobalObject, err: JSValue) void {
+            _ = err;
             streamLog("handleRejectStream", .{});
 
             if (req.sink) |wrapper| {
@@ -1700,65 +1696,6 @@ pub fn NewRequestContext(comptime ssl_enabled: bool, comptime debug_mode: bool, 
                 req.renderMetadata();
             }
 
-            if (comptime debug_mode) {
-                if (req.server) |server| {
-                    if (!err.isEmptyOrUndefinedOrNull()) {
-                        var exception_list: std.array_list.Managed(Api.JsException) = std.array_list.Managed(Api.JsException).init(req.allocator);
-                        defer exception_list.deinit();
-                        server.vm.runErrorHandler(err, &exception_list);
-
-                        if (server.dev_server) |dev_server| {
-                            _ = dev_server;
-                            // Render the error fallback HTML page like renderDefaultError does
-                            if (!req.flags.has_written_status) {
-                                req.flags.has_written_status = true;
-                                if (req.resp) |resp| {
-                                    resp.writeStatus("500 Internal Server Error");
-                                    resp.writeHeader("content-type", MimeType.html.value);
-                                }
-                            }
-
-                            const allocator = req.allocator;
-                            const fallback_container = bun.handleOom(allocator.create(Api.FallbackMessageContainer));
-                            defer allocator.destroy(fallback_container);
-
-                            // Create error message for the stream rejection
-                            fallback_container.* = Api.FallbackMessageContainer{
-                                .message = "Stream error during server-side rendering",
-                                .router = null,
-                                .reason = .fetch_event_handler,
-                                .cwd = server.vm.transpiler.fs.top_level_dir,
-                                .problems = Api.Problems{
-                                    .code = 500,
-                                    .name = "StreamError",
-                                    .exceptions = exception_list.items,
-                                    .build = .{
-                                        .msgs = &.{},
-                                    },
-                                },
-                            };
-
-                            var bb = std.array_list.Managed(u8).init(allocator);
-                            defer bb.clearAndFree();
-                            const bb_writer = bun.compat.listWriter(&bb);
-
-                            Fallback.renderBackend(
-                                allocator,
-                                fallback_container,
-                                @TypeOf(bb_writer),
-                                bb_writer,
-                            ) catch unreachable;
-
-                            if (req.resp) |resp| {
-                                _ = resp.write(bb.items);
-                            }
-
-                            req.endStream(req.shouldCloseConnection());
-                            return;
-                        }
-                    }
-                }
-            }
             req.endStream(req.shouldCloseConnection());
         }
 

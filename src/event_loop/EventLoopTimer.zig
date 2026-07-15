@@ -57,18 +57,11 @@ pub const Tag = enum {
     DNSResolver,
     WindowsNamedPipe,
     WTFTimer,
-    PostgresSQLConnectionTimeout,
-    PostgresSQLConnectionMaxLifetime,
-    MySQLConnectionTimeout,
-    MySQLConnectionMaxLifetime,
     ValkeyConnectionTimeout,
     ValkeyConnectionReconnect,
     SubprocessTimeout,
-    DevServerSweepSourceMaps,
-    DevServerMemoryVisualizerTick,
     AbortSignalTimeout,
     DateHeaderTimer,
-    BunTest,
     EventLoopDelayMonitor,
     CronJob,
 
@@ -82,19 +75,11 @@ pub const Tag = enum {
             .DNSResolver => DNSResolver,
             .WindowsNamedPipe => if (Environment.isWindows) uws.WindowsNamedPipe else UnreachableTimer,
             .WTFTimer => WTFTimer,
-            .PostgresSQLConnectionTimeout => jsc.Postgres.PostgresSQLConnection,
-            .PostgresSQLConnectionMaxLifetime => jsc.Postgres.PostgresSQLConnection,
-            .MySQLConnectionTimeout => jsc.MySQL.MySQLConnection,
-            .MySQLConnectionMaxLifetime => jsc.MySQL.MySQLConnection,
             .SubprocessTimeout => jsc.Subprocess,
             .ValkeyConnectionReconnect => jsc.API.Valkey,
             .ValkeyConnectionTimeout => jsc.API.Valkey,
-            .DevServerSweepSourceMaps,
-            .DevServerMemoryVisualizerTick,
-            => bun.bake.DevServer,
             .AbortSignalTimeout => jsc.WebCore.AbortSignal.Timeout,
             .DateHeaderTimer => jsc.API.Timer.DateHeaderTimer,
-            .BunTest => jsc.Jest.bun_test.BunTest,
             .EventLoopDelayMonitor => jsc.API.Timer.EventLoopDelayMonitor,
             .CronJob => bun.api.cron.CronJob,
         };
@@ -103,7 +88,6 @@ pub const Tag = enum {
     pub fn allowFakeTimers(self: Tag) bool {
         return switch (self) {
             .WTFTimer, // internal
-            .BunTest, // for test timeouts
             .EventLoopDelayMonitor, // probably important
             .StatWatcherScheduler,
             .CronJob, // calendar-anchored to real wall clock
@@ -169,14 +153,8 @@ fn ns(self: *const Self) u64 {
 
 pub fn fire(self: *Self, now: *const timespec, vm: *VirtualMachine) void {
     switch (self.tag) {
-        .PostgresSQLConnectionTimeout => @as(*api.Postgres.PostgresSQLConnection, @alignCast(@fieldParentPtr("timer", self))).onConnectionTimeout(),
-        .PostgresSQLConnectionMaxLifetime => @as(*api.Postgres.PostgresSQLConnection, @alignCast(@fieldParentPtr("max_lifetime_timer", self))).onMaxLifetimeTimeout(),
-        .MySQLConnectionTimeout => @as(*api.MySQL.MySQLConnection, @alignCast(@fieldParentPtr("timer", self))).onConnectionTimeout(),
-        .MySQLConnectionMaxLifetime => @as(*api.MySQL.MySQLConnection, @alignCast(@fieldParentPtr("max_lifetime_timer", self))).onMaxLifetimeTimeout(),
         .ValkeyConnectionTimeout => @as(*api.Valkey, @alignCast(@fieldParentPtr("timer", self))).onConnectionTimeout(),
         .ValkeyConnectionReconnect => @as(*api.Valkey, @alignCast(@fieldParentPtr("reconnect_timer", self))).onReconnectTimer(),
-        .DevServerMemoryVisualizerTick => bun.bake.DevServer.emitMemoryVisualizerMessageTimer(self, now),
-        .DevServerSweepSourceMaps => bun.bake.DevServer.SourceMapStore.sweepWeakRefs(self, now),
         .AbortSignalTimeout => {
             const timeout = @as(*jsc.WebCore.AbortSignal.Timeout, @fieldParentPtr("event_loop_timer", self));
             timeout.run(vm);
@@ -184,11 +162,6 @@ pub fn fire(self: *Self, now: *const timespec, vm: *VirtualMachine) void {
         .DateHeaderTimer => {
             const date_header_timer = @as(*jsc.API.Timer.DateHeaderTimer, @fieldParentPtr("event_loop_timer", self));
             date_header_timer.run(vm);
-        },
-        .BunTest => {
-            var container_strong = jsc.Jest.bun_test.BunTestPtr.cloneFromRawUnsafe(@fieldParentPtr("timer", self));
-            defer container_strong.deinit();
-            jsc.Jest.bun_test.BunTest.bunTestTimeoutCallback(container_strong, now, vm);
         },
         .EventLoopDelayMonitor => {
             const monitor = @as(*jsc.API.Timer.EventLoopDelayMonitor, @fieldParentPtr("event_loop_timer", self));

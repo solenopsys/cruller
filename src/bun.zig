@@ -834,7 +834,7 @@ pub const simdutf = @import("./simdutf_sys/simdutf.zig");
 
 pub var start_time: i128 = 0;
 
-pub fn openFileZ(pathZ: [:0]const u8, open_flags: std.fs.File.OpenFlags) !std.fs.File {
+pub fn openFileZ(pathZ: [:0]const u8, open_flags: std.Io.Dir.OpenFileOptions) !std.Io.File {
     var flags: i32 = 0;
     switch (open_flags.mode) {
         .read_only => flags |= O.RDONLY,
@@ -843,10 +843,10 @@ pub fn openFileZ(pathZ: [:0]const u8, open_flags: std.fs.File.OpenFlags) !std.fs
     }
 
     const res = try sys.open(pathZ, flags, 0).unwrap();
-    return std.fs.File{ .handle = res.cast() };
+    return std.Io.File{ .handle = res.cast(), .flags = .{ .nonblocking = false } };
 }
 
-pub fn openFile(path_: []const u8, open_flags: std.fs.File.OpenFlags) !std.fs.File {
+pub fn openFile(path_: []const u8, open_flags: std.Io.Dir.OpenFileOptions) !std.Io.File {
     if (comptime Environment.isWindows) {
         var flags: i32 = 0;
         switch (open_flags.mode) {
@@ -1268,7 +1268,7 @@ fn getFdPathViaCWD(fd: std.posix.fd_t, buf: *bun.PathBuffer) ![]u8 {
     var needs_chdir = false;
     defer {
         if (needs_chdir) bun.compat.fchdir(prev_fd) catch unreachable;
-        std.posix.close(prev_fd);
+        FD.fromNative(prev_fd).close();
     }
     try bun.compat.fchdir(fd);
     needs_chdir = true;
@@ -1463,7 +1463,7 @@ pub fn asByteSlice(buffer: anytype) []const u8 {
 
 comptime {
     _ = @import("./runtime/node/buffer.zig").BufferVectorized.fill;
-// bzrt-cut:     _ = @import("./cli/upgrade_command.zig").Version;
+    // bzrt-cut:     _ = @import("./cli/upgrade_command.zig").Version;
     _ = @import("./jsc/resolve_path_jsc.zig");
     _ = @import("./jsc/resolver_jsc.zig");
 }
@@ -1892,17 +1892,8 @@ pub fn HiveRef(comptime T: type, comptime capacity: u16) type {
 pub const tracy = @import("./perf/tracy.zig");
 pub const trace = tracy.trace;
 
-pub fn openFileForPath(file_path: [:0]const u8) !std.fs.File {
-    if (Environment.isWindows)
-        return std.fs.cwd().openFileZ(file_path, .{});
-
-    const O_PATH = if (comptime Environment.isLinux) O.PATH else O.RDONLY;
-    const flags: u32 = O.CLOEXEC | O.NOCTTY | O_PATH;
-
-    const fd = try std.posix.openZ(file_path, O.toPacked(flags), 0);
-    return std.fs.File{
-        .handle = fd,
-    };
+pub fn openFileForPath(file_path: [:0]const u8) !std.Io.File {
+    return std.Io.Dir.cwd().openFile(compat.io(), file_path, .{ .path_only = true });
 }
 
 pub fn openDirForPath(file_path: [:0]const u8) !std.fs.Dir {
@@ -2294,7 +2285,7 @@ pub inline fn serializableInto(comptime T: type, init: anytype) T {
 /// Like std.fs.Dir.makePath except instead of infinite looping on dangling
 /// symlink, it deletes the symlink and tries again.
 pub fn makePath(dir: std.Io.Dir, sub_path: []const u8) !void {
-    var it = try std.fs.path.componentIterator(sub_path);
+    var it = std.fs.path.componentIterator(sub_path);
     var component = it.last() orelse return;
     while (true) {
         dir.createDir(compat.io(), component.path, .default_dir) catch |err| switch (err) {
@@ -2834,7 +2825,6 @@ pub fn deleteAllPoolsForThreadExit() void {
         bun.w_path_buffer_pool,
         bun.path_buffer_pool,
         jsc.ConsoleObject.Formatter.Visited.Pool,
-        bun.js_parser.StringVoidMap.Pool,
     };
     inline for (pools_to_delete) |pool| {
         pool.deleteAll();
@@ -3490,8 +3480,6 @@ pub fn memmove(output: []u8, input: []const u8) void {
 pub const hmac = @import("./sha_hmac/hmac.zig");
 pub const libdeflate = @import("./libdeflate_sys/libdeflate.zig");
 
-pub const bake = @import("./bake/bake.zig");
-
 /// like std.enums.tagName, except it doesn't lose the sentinel value.
 pub fn tagName(comptime Enum: type, value: Enum) ?[:0]const u8 {
     return inline for (@typeInfo(Enum).@"enum".fields) |f| {
@@ -3813,7 +3801,7 @@ pub const deprecated = @import("./bun_core/deprecated.zig");
 pub fn getUseSystemCA(globalObject: *jsc.JSGlobalObject, callFrame: *jsc.CallFrame) error{ JSError, OutOfMemory }!jsc.JSValue {
     _ = globalObject;
     _ = callFrame;
-// bzrt-cut:     const Arguments = @import("./cli/Arguments.zig");
+    // bzrt-cut:     const Arguments = @import("./cli/Arguments.zig");
     return jsc.JSValue.jsBoolean(false); // bzrt: CLI вырезан
 }
 

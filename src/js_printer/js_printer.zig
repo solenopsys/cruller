@@ -428,8 +428,6 @@ pub const Options = struct {
     // us do binary search on to figure out what line a given AST node came from
     line_offset_tables: ?SourceMap.LineOffsetTable.List = null,
 
-    mangled_props: ?*const bun.bundle_v2.MangledProps,
-
     // Default indentation is 2 spaces
     pub const Indentation = struct {
         scalar: usize = 2,
@@ -931,10 +929,6 @@ fn NewPrinter(
 
         pub fn mangledPropName(p: *Printer, _ref: Ref) string {
             const ref = p.symbols().follow(_ref);
-            // TODO: we don't support that
-            if (p.options.mangled_props != null) {
-                if (p.options.mangled_props.?.get(ref)) |name| return name;
-            }
             return p.renamer.nameForSymbol(ref);
         }
 

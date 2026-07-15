@@ -175,7 +175,7 @@ pub const Fs = struct {
                 file_handle = try bun.openFile(path, .{ .mode = .read_only });
             }
         } else {
-            try file_handle.seekTo(0);
+            _ = try bun.sys.lseek(.fromStdFile(file_handle), 0, std.posix.SEEK.SET).unwrap();
         }
 
         if (comptime !Environment.isWindows) // skip on Windows because NTCreateFile will do it.

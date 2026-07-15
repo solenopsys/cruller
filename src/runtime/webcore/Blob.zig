@@ -2135,19 +2135,6 @@ pub fn findOrCreateFileFromPath(path_or_fd: *jsc.Node.PathOrFileDescriptor, glob
                     slice = path_or_fd.path.slice();
                 }
 
-                if (vm.standalone_module_graph) |graph| {
-                    if (graph.find(slice)) |file| {
-                        defer {
-                            if (path_or_fd.path != .string) {
-                                path_or_fd.deinit();
-                                path_or_fd.* = .{ .path = .{ .string = bun.PathString.empty } };
-                            }
-                        }
-
-                        return file.blob(globalThis).dupe();
-                    }
-                }
-
                 path_or_fd.toThreadSafe();
                 const copy = path_or_fd.*;
                 path_or_fd.* = .{ .path = .{ .string = bun.PathString.empty } };
@@ -4185,12 +4172,6 @@ fn fromJSWithoutDeferGC(
                         } else {
                             return blob.dupe();
                         }
-                    } else if (top_value.as(jsc.API.BuildArtifact)) |build| {
-                        // The previous "move" path here only nulled the store on a
-                        // local copy and left `build.blob` fully intact, so it was
-                        // never a real move. Share the store and deep-copy owned
-                        // buffers instead.
-                        return build.blob.dupe();
                     } else {
                         const sliced = try current.toSliceClone(global);
                         if (sliced.allocator.get()) |allocator| {

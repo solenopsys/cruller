@@ -27,7 +27,7 @@ pub fn build(b: *std.Build) void {
     opts.addOption(bool, "enable_asan", false);
     opts.addOption(bool, "enable_fuzzilli", false);
     opts.addOption(bool, "enable_valgrind", false);
-    opts.addOption(bool, "enable_tinycc", false);
+    opts.addOption(bool, "enable_tinycc", true);
     opts.addOption(bool, "use_mimalloc", true);
     opts.addOption([]const u8, "reported_nodejs_version", "24.3.0");
     opts.addOption(bool, "zig_self_hosted_backend", false);

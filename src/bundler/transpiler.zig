@@ -90,7 +90,6 @@ pub const Transpiler = struct {
 
     // bzrt: package manager вырезан
 
-
     pub fn setLog(this: *Transpiler, log: *logger.Log) void {
         this.log = log;
         this.linker.log = log;
@@ -600,7 +599,6 @@ pub const Transpiler = struct {
                     .runtime_transpiler_cache = runtime_transpiler_cache,
                     .print_dce_annotations = transpiler.options.emit_dce_annotations,
                     .hmr_ref = ast.wrapper_ref,
-                    .mangled_props = null,
                 },
                 enable_source_map,
             ),
@@ -626,7 +624,6 @@ pub const Transpiler = struct {
                     .runtime_transpiler_cache = runtime_transpiler_cache,
                     .print_dce_annotations = transpiler.options.emit_dce_annotations,
                     .hmr_ref = ast.wrapper_ref,
-                    .mangled_props = null,
                 },
                 enable_source_map,
             ),
@@ -663,7 +660,6 @@ pub const Transpiler = struct {
                         .target = transpiler.options.target,
                         .print_dce_annotations = transpiler.options.emit_dce_annotations,
                         .hmr_ref = ast.wrapper_ref,
-                        .mangled_props = null,
                     },
                     enable_source_map,
                 ),

@@ -16,7 +16,7 @@ It is **not** a general-purpose JavaScript toolkit, and it is **not** trying to 
 keep the engine — the part that actually runs a server — and throw out everything that isn't needed in
 production. No package manager, no CLI, no shell, no bundler/transpiler, no test runner. What's left is the
 part of Bun that runs an already-built server: the HTTP(S) stack (HTTP/1, HTTP/2, HTTP/3), static file
-serving, SSR (`react-dom/server`-style rendering via `bake`), WebSockets, and the `webcore` primitives
+serving, SSR (`react-dom/server` over `Bun.serve`), WebSockets, and the `webcore` primitives
 (`fetch`, streams, `Blob`, `Request`/`Response`) needed to implement them.
 
 JavaScriptCore (`bun-webkit`) is kept as-is — it's a vendored, pre-built dependency consumed through its C
@@ -30,16 +30,17 @@ API, untouched by the Zig version bump.
 - Bundler / transpiler (`js_parser`, `js_printer`, `bundle_v2`, CSS parser, standalone executables /
   `StandaloneModuleGraph`)
 - Test runner (`bun test` itself — this does not affect Zig's own `zig build test`)
-- SQL clients (Postgres/MySQL), `napi`, FFI, patch-package, archive (tar) support, Markdown/YAML/JSON5/Archive
+- SQL clients (Postgres/MySQL), `napi`, patch-package, archive (tar) support, Markdown/YAML/JSON5/Archive
   runtime objects, full Node `fs` compatibility surface
 
 ## What's kept
 
 - HTTP/1, HTTP/2, HTTP/3 server (`http/`, `http_jsc/`, `uws_sys/`)
-- Static file serving and SSR/dev-server engine (`bake/`)
+- Static file serving and React SSR primitives (without Bake/dev-server/HMR)
 - `webcore` (`fetch`, streams, `Blob`, `Request`/`Response`, WebSockets)
 - Module resolver (for loading pre-built JS — no on-the-fly transpilation)
 - Valkey/Redis client (`valkey_jsc/`)
+- `bun:ffi` for project-owned Zig/C ABI libraries, including `JSCallback`
 - JavaScriptCore bindings (`jsc/`)
 - Foundation: `sys`, `collections`, `bun_core`, `string`, `unicode`, `io`, `bun_alloc`, `ptr`, `threading`,
   `crash_handler`, `errno`, `logger`, `router`, `watcher`, `boringssl_sys` (TLS)

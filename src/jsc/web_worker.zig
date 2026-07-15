@@ -442,39 +442,6 @@ fn startVM(this: *WebWorker) !void {
 
     var transform_options = this.parent.transpiler.options.transform_options;
 
-    if (this.execArgv) |exec_argv| parse_new_args: {
-        var new_args: std.array_list.Managed([]const u8) = try .initCapacity(bun.default_allocator, exec_argv.len);
-        defer {
-            for (new_args.items) |arg| bun.default_allocator.free(arg);
-            new_args.deinit();
-        }
-
-        for (exec_argv) |arg| {
-            try new_args.append(arg.toOwnedSliceZ(bun.default_allocator));
-        }
-
-        var diag: bun.clap.Diagnostic = .{};
-        var iter: bun.clap.args.SliceIterator = .init(new_args.items);
-
-        var args = bun.clap.parseEx(bun.clap.Help, bun.cli.Command.Tag.RunCommand.params(), &iter, .{
-            .diagnostic = &diag,
-            .allocator = bun.default_allocator,
-
-            // just one for executable
-            .stop_after_positional_at = 1,
-        }) catch {
-            // ignore param parsing errors
-            break :parse_new_args;
-        };
-        defer args.deinit();
-
-        // override the existing even if it was set
-        transform_options.allow_addons = !args.flag("--no-addons");
-
-        // TODO: currently this only checks for --no-addons. I think
-        // this should go through most flags and update the options.
-    }
-
     this.arena = bun.MimallocArena.init();
     const allocator = this.arena.?.allocator();
 
@@ -861,66 +828,6 @@ fn resolveEntryPointSpecifier(
     error_message: *bun.String,
     logger: *bun.logger.Log,
 ) ?[]const u8 {
-    if (parent.standalone_module_graph) |graph| {
-        if (graph.find(str) != null) {
-            return str;
-        }
-
-        // Since `bun build --compile` renames files to `.js` by
-        // default, we need to do the reverse of our file extension
-        // mapping.
-        //
-        //   new Worker("./foo") -> new Worker("./foo.js")
-        //   new Worker("./foo.ts") -> new Worker("./foo.js")
-        //   new Worker("./foo.jsx") -> new Worker("./foo.js")
-        //   new Worker("./foo.mjs") -> new Worker("./foo.js")
-        //   new Worker("./foo.mts") -> new Worker("./foo.js")
-        //   new Worker("./foo.cjs") -> new Worker("./foo.js")
-        //   new Worker("./foo.cts") -> new Worker("./foo.js")
-        //   new Worker("./foo.tsx") -> new Worker("./foo.js")
-        //
-        if (bun.strings.hasPrefixComptime(str, "./") or bun.strings.hasPrefixComptime(str, "../")) try_from_extension: {
-            var pathbuf: bun.PathBuffer = undefined;
-            var base = str;
-
-            base = bun.path.joinAbsStringBuf(bun.StandaloneModuleGraph.base_public_path_with_default_suffix, &pathbuf, &.{str}, .loose);
-            const extname = std.fs.path.extension(base);
-
-            // ./foo -> ./foo.js
-            if (extname.len == 0) {
-                pathbuf[base.len..][0..3].* = ".js".*;
-                if (graph.find(pathbuf[0 .. base.len + 3])) |js_file| {
-                    return js_file.name;
-                }
-
-                break :try_from_extension;
-            }
-
-            // ./foo.ts -> ./foo.js
-            if (bun.strings.eqlComptime(extname, ".ts")) {
-                pathbuf[base.len - 3 .. base.len][0..3].* = ".js".*;
-                if (graph.find(pathbuf[0..base.len])) |js_file| {
-                    return js_file.name;
-                }
-
-                break :try_from_extension;
-            }
-
-            if (extname.len == 4) {
-                inline for (.{ ".tsx", ".jsx", ".mjs", ".mts", ".cts", ".cjs" }) |ext| {
-                    if (bun.strings.eqlComptime(extname, ext)) {
-                        pathbuf[base.len - ext.len ..][0..".js".len].* = ".js".*;
-                        const as_js = pathbuf[0 .. base.len - ext.len + ".js".len];
-                        if (graph.find(as_js)) |js_file| {
-                            return js_file.name;
-                        }
-                        break :try_from_extension;
-                    }
-                }
-            }
-        }
-    }
-
     if (bun.webcore.ObjectURLRegistry.isBlobURL(str)) {
         if (bun.webcore.ObjectURLRegistry.singleton().has(str["blob:".len..])) {
             return str;

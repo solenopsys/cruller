@@ -167,10 +167,6 @@ fn messageWithTypeAndLevel_(
         console.writer;
     const Writer = @TypeOf(writer);
 
-    if (bun.jsc.Jest.Jest.runner) |runner| {
-        runner.bun_test_root.onBeforePrint();
-    }
-
     var print_length = len;
     // Get console depth from CLI options or bunfig, fallback to default
     const console_depth = DEFAULT_CONSOLE_LOG_DEPTH; // bzrt: CLI вырезан
@@ -2596,9 +2592,6 @@ pub const Formatter = struct {
                 } else if (value.as(jsc.WebCore.Request)) |request| {
                     request.writeFormat(value, ConsoleObject.Formatter, this, writer_, enable_ansi_colors) catch {};
                     return;
-                } else if (value.as(jsc.API.BuildArtifact)) |build| {
-                    build.writeFormat(ConsoleObject.Formatter, this, writer_, enable_ansi_colors) catch {};
-                    return;
                 } else if (value.as(jsc.WebCore.Blob)) |blob| {
                     blob.writeFormat(ConsoleObject.Formatter, this, writer_, enable_ansi_colors) catch {};
                     return;
@@ -3806,7 +3799,9 @@ const string = []const u8;
 const std = @import("std");
 // bzrt-cut: const CLI = @import("../cli/cli.zig").Command;
 const JestPrettyFormat = struct { // bzrt: test_runner вырезан
-    pub inline fn printAsymmetricMatcher(_: anytype, _: anytype, _: anytype, _: anytype, _: anytype, _: anytype, _: anytype) !bool { return false; }
+    pub inline fn printAsymmetricMatcher(_: anytype, _: anytype, _: anytype, _: anytype, _: anytype, _: anytype, _: anytype) !bool {
+        return false;
+    }
 };
 
 const bun = @import("bun");

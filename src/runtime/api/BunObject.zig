@@ -11,7 +11,6 @@ const Bun = @This();
 pub const BunObject = struct {
     // --- Callbacks ---
     pub const allocUnsafe = toJSCallback(Bun.allocUnsafe);
-    pub const build = toJSCallback(Bun.JSBundler.buildFn);
     pub const color = toJSCallback(cutFeatureCallback); // bzrt-cut: bun.css
     pub const connect = toJSCallback(host_fn.wrapStaticMethod(api.Listener, "connect", false));
     pub const createParsedShellScript = toJSCallback(cutFeatureCallback); // bzrt-cut: bun.shell
@@ -22,12 +21,11 @@ pub const BunObject = struct {
     pub const gzipSync = toJSCallback(JSZlib.gzipSync);
     pub const indexOfLine = toJSCallback(Bun.indexOfLine);
     pub const inflateSync = toJSCallback(JSZlib.inflateSync);
-// bzrt-cut:     pub const jest = toJSCallback(@import("../../test_runner/jest.zig").Jest.call);
+    // bzrt-cut:     pub const jest = toJSCallback(@import("../../test_runner/jest.zig").Jest.call);
     pub const listen = toJSCallback(host_fn.wrapStaticMethod(api.Listener, "listen", false));
     pub const mmap = toJSCallback(Bun.mmapFile);
     pub const nanoseconds = toJSCallback(Bun.nanoseconds);
     pub const openInEditor = toJSCallback(Bun.openInEditor);
-    pub const registerMacro = toJSCallback(Bun.registerMacro);
     pub const resolve = toJSCallback(Bun.resolve);
     pub const resolveSync = toJSCallback(Bun.resolveSync);
     pub const serve = toJSCallback(Bun.serve);
@@ -69,11 +67,9 @@ pub const BunObject = struct {
     pub const TOML = toJSLazyPropertyCallback(Bun.getTOMLObject);
     pub const JSON5 = toJSLazyPropertyCallback(Bun.getJSON5Object);
     pub const YAML = toJSLazyPropertyCallback(Bun.getYAMLObject);
-    pub const Transpiler = toJSLazyPropertyCallback(Bun.getTranspilerConstructor);
     pub const argv = toJSLazyPropertyCallback(Bun.getArgv);
     pub const cron = toJSLazyPropertyCallback(@import("./cron.zig").getCronObject);
     pub const cwd = toJSLazyPropertyCallback(Bun.getCWD);
-    pub const embeddedFiles = toJSLazyPropertyCallback(Bun.getEmbeddedFiles);
     pub const enableANSIColors = toJSLazyPropertyCallback(Bun.enableANSIColors);
     pub const hash = toJSLazyPropertyCallback(Bun.getHashObject);
     pub const inspect = toJSLazyPropertyCallback(Bun.getInspect);
@@ -141,7 +137,6 @@ pub const BunObject = struct {
         @export(&BunObject.YAML, .{ .name = lazyPropertyCallbackName("YAML") });
         @export(&BunObject.Glob, .{ .name = lazyPropertyCallbackName("Glob") });
         @export(&BunObject.Image, .{ .name = lazyPropertyCallbackName("Image") });
-        @export(&BunObject.Transpiler, .{ .name = lazyPropertyCallbackName("Transpiler") });
         @export(&BunObject.argv, .{ .name = lazyPropertyCallbackName("argv") });
         @export(&BunObject.cron, .{ .name = lazyPropertyCallbackName("cron") });
         @export(&BunObject.cwd, .{ .name = lazyPropertyCallbackName("cwd") });
@@ -151,7 +146,6 @@ pub const BunObject = struct {
         @export(&BunObject.origin, .{ .name = lazyPropertyCallbackName("origin") });
         @export(&BunObject.unsafe, .{ .name = lazyPropertyCallbackName("unsafe") });
         @export(&BunObject.semver, .{ .name = lazyPropertyCallbackName("semver") });
-        @export(&BunObject.embeddedFiles, .{ .name = lazyPropertyCallbackName("embeddedFiles") });
         @export(&BunObject.S3Client, .{ .name = lazyPropertyCallbackName("S3Client") });
         @export(&BunObject.s3, .{ .name = lazyPropertyCallbackName("s3") });
         @export(&BunObject.ValkeyClient, .{ .name = lazyPropertyCallbackName("ValkeyClient") });
@@ -161,7 +155,6 @@ pub const BunObject = struct {
 
         // --- Callbacks ---
         @export(&BunObject.allocUnsafe, .{ .name = callbackName("allocUnsafe") });
-        @export(&BunObject.build, .{ .name = callbackName("build") });
         @export(&BunObject.color, .{ .name = callbackName("color") });
         @export(&BunObject.connect, .{ .name = callbackName("connect") });
         @export(&BunObject.createParsedShellScript, .{ .name = callbackName("createParsedShellScript") });
@@ -177,7 +170,6 @@ pub const BunObject = struct {
         @export(&BunObject.mmap, .{ .name = callbackName("mmap") });
         @export(&BunObject.nanoseconds, .{ .name = callbackName("nanoseconds") });
         @export(&BunObject.openInEditor, .{ .name = callbackName("openInEditor") });
-        @export(&BunObject.registerMacro, .{ .name = callbackName("registerMacro") });
         @export(&BunObject.resolve, .{ .name = callbackName("resolve") });
         @export(&BunObject.resolveSync, .{ .name = callbackName("resolveSync") });
         @export(&BunObject.serve, .{ .name = callbackName("serve") });
@@ -454,33 +446,6 @@ pub fn getInspect(globalObject: *jsc.JSGlobalObject, _: *jsc.JSObject) jsc.JSVal
     fun.put(globalObject, ZigString.static("custom"), jsc.JSValue.symbolFor(globalObject, &str));
     fun.put(globalObject, ZigString.static("table"), jsc.JSFunction.create(globalObject, "table", inspectTable, 3, .{}));
     return fun;
-}
-
-pub fn registerMacro(globalObject: *jsc.JSGlobalObject, callframe: *jsc.CallFrame) bun.JSError!jsc.JSValue {
-    const arguments_ = callframe.arguments_old(2);
-    const arguments = arguments_.slice();
-    if (arguments.len != 2 or !arguments[0].isNumber()) {
-        return globalObject.throwInvalidArguments("Internal error registering macros: invalid args", .{});
-    }
-    const id = arguments[0].toInt32();
-    if (id == -1 or id == 0) {
-        return globalObject.throwInvalidArguments("Internal error registering macros: invalid id", .{});
-    }
-
-    if (!arguments[1].isCell() or !arguments[1].isCallable()) {
-        // TODO: add "toTypeOf" helper
-        return globalObject.throw("Macro must be a function", .{});
-    }
-
-    const get_or_put_result = VirtualMachine.get().macros.getOrPut(id) catch unreachable;
-    if (get_or_put_result.found_existing) {
-        get_or_put_result.value_ptr.*.?.value().unprotect();
-    }
-
-    arguments[1].protect();
-    get_or_put_result.value_ptr.* = arguments[1].asObjectRef();
-
-    return .js_undefined;
 }
 
 pub fn getCWD(globalThis: *jsc.JSGlobalObject, _: *jsc.JSObject) jsc.JSValue {
@@ -1135,10 +1100,6 @@ pub fn mmapFile(globalThis: *jsc.JSGlobalObject, callframe: *jsc.CallFrame) bun.
     return bun.jsc.array_buffer.makeTypedArrayWithBytesNoCopy(globalThis, .TypeUint8, map.ptr, map.len, S.x, @ptrFromInt(map.len));
 }
 
-pub fn getTranspilerConstructor(globalThis: *jsc.JSGlobalObject, _: *jsc.JSObject) jsc.JSValue {
-    return jsc.API.JSTranspiler.js.getConstructor(globalThis);
-}
-
 pub fn getFileSystemRouter(globalThis: *jsc.JSGlobalObject, _: *jsc.JSObject) jsc.JSValue {
     return jsc.API.FileSystemRouter.js.getConstructor(globalThis);
 }
@@ -1226,38 +1187,6 @@ pub fn getValkeyClientConstructor(globalThis: *jsc.JSGlobalObject, _: *jsc.JSObj
 
 pub fn getTerminalConstructor(globalThis: *jsc.JSGlobalObject, _: *jsc.JSObject) jsc.JSValue {
     return api.Terminal.js.getConstructor(globalThis);
-}
-
-pub fn getEmbeddedFiles(globalThis: *jsc.JSGlobalObject, _: *jsc.JSObject) bun.JSError!jsc.JSValue {
-    const vm = globalThis.bunVM();
-    const graph = vm.standalone_module_graph orelse return try jsc.JSValue.createEmptyArray(globalThis, 0);
-
-    const unsorted_files = graph.files.values();
-    var sort_indices = bun.handleOom(std.array_list.Managed(u32).initCapacity(bun.default_allocator, unsorted_files.len));
-    defer sort_indices.deinit();
-    for (0..unsorted_files.len) |index| {
-        // Some % of people using `bun build --compile` want to obscure the source code
-        // We don't really do that right now, but exposing the output source
-        // code here as an easily accessible Blob is even worse for them.
-        // So let's omit any source code files from the list.
-        if (!unsorted_files[index].appearsInEmbeddedFilesArray()) continue;
-        sort_indices.appendAssumeCapacity(@intCast(index));
-    }
-
-    var i: u32 = 0;
-    var array = try jsc.JSValue.createEmptyArray(globalThis, sort_indices.items.len);
-    std.mem.sort(u32, sort_indices.items, unsorted_files, bun.StandaloneModuleGraph.File.lessThanByIndex);
-    for (sort_indices.items) |index| {
-        const file = &unsorted_files[index];
-        // We call .dupe() on this to ensure that we don't return a blob that might get freed later.
-        const input_blob = file.blob(globalThis);
-        const blob = jsc.WebCore.Blob.new(input_blob.dupeWithContentType(true));
-        blob.name = input_blob.name.dupeRef();
-        try array.putIndex(globalThis, i, blob.toJS(globalThis));
-        i += 1;
-    }
-
-    return array;
 }
 
 pub fn getSemver(globalThis: *jsc.JSGlobalObject, _: *jsc.JSObject) jsc.JSValue {
@@ -2020,12 +1949,7 @@ const SemverObject = bun.Semver.SemverObject;
 const gen = bun.gen.BunObject;
 
 const api = bun.api;
-const FFIObject = struct { // bzrt: ffi вырезан
-    pub fn getter(globalThis: *jsc.JSGlobalObject, _: *jsc.JSObject) jsc.JSValue {
-        _ = globalThis;
-        return .js_undefined;
-    }
-};
+const FFIObject = bun.api.FFIObject;
 const HashObject = bun.api.HashObject;
 const JSON5Object = bun.api.JSON5Object;
 const JSONCObject = bun.api.JSONCObject;
@@ -2045,6 +1969,3 @@ const VirtualMachine = jsc.VirtualMachine;
 const WebCore = bun.jsc.WebCore;
 const ZigString = bun.jsc.ZigString;
 const host_fn = bun.jsc.host_fn;
-
-const JSBundler = bun.jsc.API.JSBundler;
-const Transpiler = bun.jsc.API.JSTranspiler;

@@ -79,9 +79,6 @@ pub const Route = struct {
     file_layout: OpaqueFileId.Optional = .none,
     // file_not_found: OpaqueFileId.Optional = .none,
 
-    /// Only used by DevServer, if this route is 1. navigatable & 2. has been requested at least once
-    bundle: bun.bake.DevServer.RouteBundle.Index.Optional = .none,
-
     inline fn filePtr(r: *Route, file_kind: FileKind) *OpaqueFileId.Optional {
         return &switch (file_kind) {
             inline else => |kind| @field(r, "file_" ++ @tagName(kind)),

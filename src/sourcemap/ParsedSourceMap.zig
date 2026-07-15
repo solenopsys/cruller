@@ -119,11 +119,6 @@ fn deinit(this: *ParsedSourceMap) void {
     bun.destroy(this);
 }
 
-pub fn standaloneModuleGraphData(this: *ParsedSourceMap) *bun.StandaloneModuleGraph.SerializedSourceMap.Loaded {
-    bun.assert(this.is_standalone_module_graph);
-    return @ptrFromInt(this.underlying_provider.data);
-}
-
 pub fn memoryCost(this: *const ParsedSourceMap) usize {
     const mappings_cost = if (this.internal) |ism| ism.memoryCost() else this.mappings.memoryCost();
     return @sizeOf(ParsedSourceMap) + mappings_cost + this.external_source_names.len * @sizeOf([]const u8);

@@ -16,10 +16,10 @@ is_executable: bool = false,
 source_map_index: u32 = std.math.maxInt(u32),
 bytecode_index: u32 = std.math.maxInt(u32),
 module_info_index: u32 = std.math.maxInt(u32),
-output_kind: jsc.API.BuildArtifact.OutputKind,
+output_kind: OutputKind,
 /// Relative
 dest_path: []const u8 = "",
-side: ?bun.bake.Side,
+side: ?void,
 /// This is only set for the JS bundle, and not files associated with an
 /// entrypoint like sourcemaps and bytecode
 entry_point_index: ?u32,
@@ -40,6 +40,17 @@ pub const BakeExtra = struct {
     is_route: bool = false,
     fully_static: bool = false,
     bake_is_runtime: bool = false,
+};
+
+pub const OutputKind = enum {
+    chunk,
+    asset,
+    @"entry-point",
+    sourcemap,
+    bytecode,
+    module_info,
+    @"metafile-json",
+    @"metafile-markdown",
 };
 
 pub const Index = bun.GenericIndex(u32, OutputFile);
@@ -191,7 +202,7 @@ pub const Options = struct {
     size: ?usize = null,
     input_path: []const u8 = "",
     display_size: u32 = 0,
-    output_kind: jsc.API.BuildArtifact.OutputKind,
+    output_kind: OutputKind,
     is_executable: bool,
     data: union(enum) {
         buffer: struct {
@@ -205,7 +216,7 @@ pub const Options = struct {
         },
         saved: usize,
     },
-    side: ?bun.bake.Side,
+    side: ?void,
     entry_point_index: ?u32,
     referenced_css_chunks: []const Index = &.{},
     bake_extra: BakeExtra = .{},

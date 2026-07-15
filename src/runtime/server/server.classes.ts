@@ -326,16 +326,4 @@ export default [
     values: ["socket"],
   }),
 
-  define({
-    name: "HTMLBundle",
-    noConstructor: true,
-    finalize: true,
-    proto: {
-      index: {
-        getter: "getIndex",
-        cache: true,
-      },
-    },
-    klass: {},
-  }),
 ];

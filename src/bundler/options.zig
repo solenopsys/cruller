@@ -432,14 +432,6 @@ pub const Target = enum {
         };
     }
 
-    pub fn bakeGraph(target: Target) bun.bake.Graph {
-        return switch (target) {
-            .browser => .client,
-            .bake_server_components_ssr => .ssr,
-            .bun_macro, .bun, .node => .server,
-        };
-    }
-
     pub fn outExtensions(target: Target, allocator: std.mem.Allocator) bun.StringHashMap(string) {
         var exts = bun.StringHashMap(string).init(allocator);
 
@@ -1779,11 +1771,6 @@ pub const BundleOptions = struct {
     metafile_json_path: []const u8 = "",
     /// Path to write markdown metafile (for Bun.build API)
     metafile_markdown_path: []const u8 = "",
-
-    /// Set when bake.DevServer is bundling.
-    dev_server: ?*bun.bake.DevServer = null,
-    /// Set when Bake is bundling. Affects module resolution.
-    framework: ?*bun.bake.Framework = null,
 
     serve_plugins: ?[]const []const u8 = null,
     bunfig_path: string = "",

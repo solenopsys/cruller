@@ -982,9 +982,7 @@ fn expectPrintedJSON(_contents: string, expected: string) !void {
 
     const buffer_writer = js_printer.BufferWriter.init(default_allocator);
     var writer = js_printer.BufferPrinter.init(buffer_writer);
-    const written = try js_printer.printJSON(@TypeOf(&writer), &writer, expr, source, .{
-        .mangled_props = null,
-    });
+    const written = try js_printer.printJSON(@TypeOf(&writer), &writer, expr, source, .{});
     var js = writer.ctx.buffer.list.items.ptr[0 .. written + 1];
 
     if (js.len > 1) {

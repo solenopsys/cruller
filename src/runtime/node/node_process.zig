@@ -67,40 +67,6 @@ fn createExecArgv(globalObject: *jsc.JSGlobalObject) bun.JSError!jsc.JSValue {
         }
     }
 
-    // For compiled/standalone executables, execArgv should contain compile_exec_argv and BUN_OPTIONS.
-    // Use appendOptionsEnv for BUN_OPTIONS to correctly handle quoted values.
-    if (vm.standalone_module_graph) |graph| {
-        if (graph.compile_exec_argv.len > 0 or bun.bun_options_argc > 0) {
-            var args = std.array_list.Managed(bun.String).init(temp_alloc);
-            defer args.deinit();
-            defer for (args.items) |*arg| arg.deref();
-
-            // Process BUN_OPTIONS first using appendOptionsEnv for proper quote handling.
-            // appendOptionsEnv inserts starting at index 1, so we need a placeholder.
-            if (bun.bun_options_argc > 0) {
-                if (bun.env_var.BUN_OPTIONS.get()) |opts| {
-                    try args.append(bun.String.empty); // placeholder for insert-at-1
-                    try bun.appendOptionsEnv(opts, bun.String, &args);
-                    _ = args.orderedRemove(0); // remove placeholder
-                }
-            }
-
-            if (graph.compile_exec_argv.len > 0) {
-                var tokenizer = std.mem.tokenizeAny(u8, graph.compile_exec_argv, " \t\n\r");
-                while (tokenizer.next()) |token| {
-                    try args.append(bun.String.cloneUTF8(token));
-                }
-            }
-
-            const array = try jsc.JSValue.createEmptyArray(globalObject, args.items.len);
-            for (0..args.items.len) |idx| {
-                try array.putIndex(globalObject, @intCast(idx), try args.items[idx].toJS(globalObject));
-            }
-            return array;
-        }
-        return try jsc.JSValue.createEmptyArray(globalObject, 0);
-    }
-
     var args = try std.array_list.Managed(bun.String).initCapacity(temp_alloc, bun.argv.len - 1);
     defer args.deinit();
     defer for (args.items) |*arg| arg.deref();

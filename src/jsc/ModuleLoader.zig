@@ -30,44 +30,8 @@ pub fn resetArena(this: *ModuleLoader, jsc_vm: *VirtualMachine) void {
     }
 }
 
-pub fn resolveEmbeddedFile(vm: *VirtualMachine, path_buf: *bun.PathBuffer, input_path: []const u8, extname: []const u8) ?[]const u8 {
-    if (input_path.len == 0) return null;
-    var graph = vm.standalone_module_graph orelse return null;
-    const file = graph.find(input_path) orelse return null;
-
-    if (comptime Environment.isLinux) {
-        // TODO: use /proc/fd/12346 instead! Avoid the copy!
-    }
-
-    // atomically write to a tmpfile and then move it to the final destination
-    const tmpname_buf = bun.path_buffer_pool.get();
-    defer bun.path_buffer_pool.put(tmpname_buf);
-    const tmpfilename = bun.fs.FileSystem.tmpname(extname, tmpname_buf, bun.hash(file.name)) catch return null;
-
-    const tmpdir: bun.FD = .fromStdDir(bun.fs.FileSystem.instance.tmpdir() catch return null);
-
-    // First we open the tmpfile, to avoid any other work in the event of failure.
-    const tmpfile = bun.Tmpfile.create(tmpdir, tmpfilename).unwrap() catch return null;
-    defer tmpfile.fd.close();
-
-    switch (bun.api.node.fs.NodeFS.writeFileWithPathBuffer(
-        tmpname_buf, // not used
-
-        .{
-            .data = .{
-                .encoded_slice = ZigString.Slice.fromUTF8NeverFree(file.contents),
-            },
-            .dirfd = tmpdir,
-            .file = .{ .fd = tmpfile.fd },
-            .encoding = .buffer,
-        },
-    )) {
-        .err => {
-            return null;
-        },
-        else => {},
-    }
-    return bun.path.joinAbsStringBuf(bun.fs.FileSystem.RealFS.tmpdirPath(), path_buf, &[_]string{tmpfilename}, .auto);
+pub fn resolveEmbeddedFile(_: *VirtualMachine, _: *bun.PathBuffer, _: []const u8, _: []const u8) ?[]const u8 {
+    return null;
 }
 
 pub export fn Bun__getDefaultLoader(global: *JSGlobalObject, str: *const bun.String) api.Loader {
@@ -479,34 +443,8 @@ pub fn transpileSourceCode(
             );
 
             if (parse_result.pending_imports.len > 0) {
-                if (promise_ptr == null) {
-                    return error.UnexpectedPendingResolution;
-                }
-
-                if (source.contents_is_recycled) {
-                    // this shared buffer is about to become owned by the AsyncModule struct
-                    jsc_vm.transpiler.resolver.caches.fs.resetSharedBuffer(
-                        jsc_vm.transpiler.resolver.caches.fs.sharedBuffer(),
-                    );
-                }
-
-                jsc_vm.modules.enqueue(
-                    globalObject.?,
-                    .{
-                        .parse_result = parse_result,
-                        .path = path,
-                        .loader = loader,
-                        .fd = fd,
-                        .package_json = package_json,
-                        .hash = hash,
-                        .promise_ptr = promise_ptr,
-                        .specifier = specifier,
-                        .referrer = referrer,
-                        .arena = arena,
-                    },
-                );
-                give_back_arena = false;
-                return error.AsyncModule;
+                // bzrt never installs packages while loading production modules.
+                return error.UnexpectedPendingResolution;
             }
 
             if (!jsc_vm.macro_mode)
@@ -678,7 +616,7 @@ pub fn transpileSourceCode(
         .sqlite_embedded, .sqlite => {
             const sqlite_module_source_code_string = brk: {
                 if (jsc_vm.hot_reload == .hot) {
-                    break :brk 
+                    break :brk
                     \\// Generated code
                     \\import {Database} from 'bun:sqlite';
                     \\const {path} = import.meta;
@@ -698,7 +636,7 @@ pub fn transpileSourceCode(
                     ;
                 }
 
-                break :brk 
+                break :brk
                 \\// Generated code
                 \\import {Database} from 'bun:sqlite';
                 \\export const db = new Database(import.meta.path);
@@ -717,30 +655,7 @@ pub fn transpileSourceCode(
             };
         },
 
-        .html => {
-            if (flags.disableTranspiling()) {
-                return ResolvedSource{
-                    .allocator = null,
-                    .source_code = bun.String.empty,
-                    .specifier = input_specifier,
-                    .source_url = input_specifier.createIfDifferent(path.text),
-                    .tag = .esm,
-                };
-            }
-
-            if (globalObject == null) {
-                return error.NotSupported;
-            }
-
-            const html_bundle = try jsc.API.HTMLBundle.init(globalObject.?, path.text);
-            return ResolvedSource{
-                .allocator = &jsc_vm.allocator,
-                .jsvalue_for_export = html_bundle.toJS(globalObject.?),
-                .specifier = input_specifier,
-                .source_url = input_specifier.createIfDifferent(path.text),
-                .tag = .export_default_object,
-            };
-        },
+        .html => return error.NotSupported,
 
         else => {
             if (flags.disableTranspiling()) {
@@ -1160,6 +1075,7 @@ fn getHardcodedModule(jsc_vm: *VirtualMachine, specifier: bun.String, hardcoded:
             }
             return jsSyntheticModule(.@"bun:internal-for-testing", specifier);
         },
+        .@"node:path/win32" => null,
         .@"bun:wrap" => .{
             .allocator = null,
             .source_code = String.init(Runtime.Runtime.sourceCode()),
@@ -1184,46 +1100,6 @@ pub fn fetchBuiltinModule(jsc_vm: *VirtualMachine, specifier: bun.String) !?Reso
                 .source_code = bun.String.cloneUTF8(entry.source.contents),
                 .specifier = specifier,
                 .source_url = specifier.dupeRef(),
-            };
-        }
-    } else if (jsc_vm.standalone_module_graph) |graph| {
-        const specifier_utf8 = specifier.toUTF8(bun.default_allocator);
-        defer specifier_utf8.deinit();
-        if (graph.files.getPtr(specifier_utf8.slice())) |file| {
-            if (file.loader == .sqlite or file.loader == .sqlite_embedded) {
-                const code =
-                    \\/* Generated code */
-                    \\import {Database} from 'bun:sqlite';
-                    \\import {readFileSync} from 'node:fs';
-                    \\export const db = new Database(readFileSync(import.meta.path));
-                    \\
-                    \\export const __esModule = true;
-                    \\export default db;
-                ;
-                return .{
-                    .allocator = null,
-                    .source_code = bun.String.static(code),
-                    .specifier = specifier,
-                    .source_url = specifier.dupeRef(),
-                    .source_code_needs_deref = false,
-                };
-            }
-
-            return .{
-                .allocator = null,
-                .source_code = file.toWTFString(),
-                .specifier = specifier,
-                .source_url = specifier.dupeRef(),
-                // bytecode_origin_path is the path used when generating bytecode; must match for cache hits
-                .bytecode_origin_path = if (file.bytecode_origin_path.len > 0) bun.String.fromBytes(file.bytecode_origin_path) else bun.String.empty,
-                .source_code_needs_deref = false,
-                .bytecode_cache = if (file.bytecode.len > 0) file.bytecode.ptr else null,
-                .bytecode_cache_size = file.bytecode.len,
-                .module_info = if (file.module_info.len > 0)
-                    analyze_transpiled_module.ModuleInfoDeserialized.createFromCachedRecord(file.module_info, bun.default_allocator)
-                else
-                    null,
-                .is_commonjs_module = file.module_format == .cjs,
             };
         }
     }

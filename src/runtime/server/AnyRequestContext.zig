@@ -143,14 +143,6 @@ pub fn setSignalAborted(self: AnyRequestContext, reason: bun.jsc.CommonAbortReas
     }.f, .{reason});
 }
 
-pub fn devServer(self: AnyRequestContext) ?*bun.bake.DevServer {
-    return self.dispatch(?*bun.bake.DevServer, null, struct {
-        fn f(comptime _: type, ctx: anytype) ?*bun.bake.DevServer {
-            return ctx.devServer();
-        }
-    }.f, .{});
-}
-
 pub fn deref(self: AnyRequestContext) void {
     self.dispatch(void, {}, struct {
         fn f(comptime _: type, ctx: anytype) void {

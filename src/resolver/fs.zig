@@ -22,7 +22,7 @@ pub const FileSystem = struct {
     dirname_store: *DirnameStore,
     filename_store: *FilenameStore,
 
-    threadlocal var tmpdir_handle: ?std.fs.Dir = null;
+    threadlocal var tmpdir_handle: ?std.Io.Dir = null;
 
     pub fn topLevelDirWithoutTrailingSlash(this: *const FileSystem) []const u8 {
         if (this.top_level_dir.len > 1 and this.top_level_dir[this.top_level_dir.len - 1] == std.fs.path.sep) {
@@ -32,7 +32,7 @@ pub const FileSystem = struct {
         }
     }
 
-    pub fn tmpdir(fs: *FileSystem) !std.fs.Dir {
+    pub fn tmpdir(fs: *FileSystem) !std.Io.Dir {
         if (tmpdir_handle == null) {
             tmpdir_handle = try fs.fs.openTmpDir();
         }

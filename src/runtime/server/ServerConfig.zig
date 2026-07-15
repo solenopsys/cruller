@@ -62,8 +62,6 @@ static_routes: std.array_list.Managed(StaticRouteEntry) = std.array_list.Managed
 negative_routes: std.array_list.Managed([:0]const u8) = std.array_list.Managed([:0]const u8).init(bun.default_allocator),
 user_routes_to_build: std.array_list.Managed(UserRouteBuilder) = std.array_list.Managed(UserRouteBuilder).init(bun.default_allocator),
 
-bake: ?bun.bake.UserOptions = null,
-
 pub const DevelopmentOption = enum {
     development,
     production,
@@ -199,7 +197,6 @@ pub fn cloneForReloadingStaticRoutes(this: *ServerConfig) !ServerConfig {
     this.sni = null;
     this.address = .{ .tcp = .{} };
     this.websocket = null;
-    this.bake = null;
 
     try that.normalizeStaticRoutesList();
 
@@ -293,10 +290,6 @@ pub fn deinit(this: *ServerConfig) void {
         entry.deinit();
     }
     this.static_routes.clearAndFree();
-
-    if (this.bake) |*bake| {
-        bake.deinit();
-    }
 
     for (this.user_routes_to_build.items) |*builder| {
         builder.deinit();
@@ -428,12 +421,6 @@ pub fn fromJS(
     };
     var has_hostname = false;
 
-    defer {
-        if (!args.development.isHMREnabled()) {
-            bun.assert(args.bake == null);
-        }
-    }
-
     if (strings.eqlComptime(env.get("NODE_ENV") orelse "", "production")) {
         args.development = .production;
     }
@@ -527,25 +514,6 @@ pub fn fromJS(
             }).init(global, static_obj);
             defer iter.deinit();
 
-            var init_ctx_: AnyRoute.ServerInitContext = .{
-                .arena = .init(bun.default_allocator),
-                .dedupe_html_bundle_map = .init(bun.default_allocator),
-                .framework_router_list = .init(bun.default_allocator),
-                .js_string_allocations = .empty,
-                .user_routes = &args.static_routes,
-                .global = global,
-            };
-            const init_ctx: *AnyRoute.ServerInitContext = &init_ctx_;
-            errdefer {
-                init_ctx.arena.deinit();
-                init_ctx.framework_router_list.deinit();
-            }
-            // This list is not used in the success case
-            defer init_ctx.dedupe_html_bundle_map.deinit();
-
-            var framework_router_list = std.array_list.Managed(bun.bake.FrameworkRouter.Type).init(bun.default_allocator);
-            errdefer framework_router_list.deinit();
-
             errdefer {
                 for (args.static_routes.items) |*static_route| {
                     static_route.deinit();
@@ -617,7 +585,7 @@ pub fn fromJS(
                                     },
                                     .callback = .create(function.withAsyncContextIfNeeded(global), global),
                                 }) catch |err| bun.handleOom(err);
-                            } else if (try AnyRoute.fromJS(global, path, function, init_ctx)) |html_route| {
+                            } else if (try AnyRoute.fromJS(global, path, function)) |html_route| {
                                 var method_set = bun.http.Method.Set.initEmpty();
                                 method_set.insert(method);
 
@@ -636,9 +604,9 @@ pub fn fromJS(
                     }
                 }
 
-                const route = try AnyRoute.fromJS(global, path, value, init_ctx) orelse {
+                const route = try AnyRoute.fromJS(global, path, value) orelse {
                     return global.throwInvalidArguments(
-                        \\'routes' expects a Record<string, Response | HTMLBundle | {[method: string]: (req: BunRequest) => Response|Promise<Response>}>
+                        \\'routes' expects a Record<string, Response | {[method: string]: (req: BunRequest) => Response|Promise<Response>}>
                         \\
                         \\To bundle frontend apps on-demand with Bun.serve(), import HTML files.
                         \\
@@ -681,60 +649,6 @@ pub fn fromJS(
                     .path = path,
                     .route = route,
                 }) catch |err| bun.handleOom(err);
-            }
-
-            // When HTML bundles are provided, ensure DevServer options are ready
-            // The presence of these options causes Bun.serve to initialize things.
-            if ((init_ctx.dedupe_html_bundle_map.count() > 0 or
-                init_ctx.framework_router_list.items.len > 0))
-            {
-                if (args.development.isHMREnabled()) {
-                    const root = bun.fs.FileSystem.instance.top_level_dir;
-                    const framework = try bun.bake.Framework.auto(
-                        init_ctx.arena.allocator(),
-                        &global.bunVM().transpiler.resolver,
-                        init_ctx.framework_router_list.items,
-                    );
-                    args.bake = .{
-                        .arena = init_ctx.arena,
-                        .allocations = init_ctx.js_string_allocations,
-                        .root = root,
-                        .framework = framework,
-                        .bundler_options = bun.bake.SplitBundlerOptions.empty,
-                    };
-                    const bake = &args.bake.?;
-
-                    const o = vm.transpiler.options.transform_options;
-
-                    switch (o.serve_env_behavior) {
-                        .prefix => {
-                            bake.bundler_options.client.env_prefix = vm.transpiler.options.transform_options.serve_env_prefix;
-                            bake.bundler_options.client.env = .prefix;
-                        },
-                        .load_all => {
-                            bake.bundler_options.client.env = .load_all;
-                        },
-                        .disable => {
-                            bake.bundler_options.client.env = .disable;
-                        },
-                        else => {},
-                    }
-
-                    if (o.serve_define) |define| {
-                        bake.bundler_options.client.define = define;
-                        bake.bundler_options.server.define = define;
-                        bake.bundler_options.ssr.define = define;
-                    }
-                } else {
-                    if (init_ctx.framework_router_list.items.len > 0) {
-                        return global.throwInvalidArguments("FrameworkRouter is currently only supported when `development: true`", .{});
-                    }
-                    init_ctx.arena.deinit();
-                }
-            } else {
-                bun.debugAssert(init_ctx.arena.state.end_index == 0 and
-                    init_ctx.arena.state.buffer_list.first == null);
-                init_ctx.arena.deinit();
             }
         }
 
@@ -834,24 +748,6 @@ pub fn fromJS(
         }
         if (global.hasException()) return error.JSError;
 
-        if (opts.allow_bake_config) {
-            if (try arg.getTruthy(global, "app")) |bake_args_js| brk: {
-                if (!bun.FeatureFlags.bake()) {
-                    break :brk;
-                }
-                if (args.bake != null) {
-                    // "app" is likely to be removed in favor of the HTML loader.
-                    return global.throwInvalidArguments("'app' + HTML loader not supported.", .{});
-                }
-
-                if (args.development == .production) {
-                    return global.throwInvalidArguments("TODO: 'development: false' in serve options with 'app'. For now, use `bun build --app` or set 'development: true'", .{});
-                }
-
-                args.bake = try bun.bake.UserOptions.fromJS(bake_args_js, global);
-            }
-        }
-
         if (try arg.get(global, "reusePort")) |dev| {
             args.reuse_port = dev.toBoolean();
         }
@@ -905,7 +801,7 @@ pub fn fromJS(
             const onRequest = onRequest_.withAsyncContextIfNeeded(global);
             onRequest.protect();
             args.onRequest = onRequest;
-        } else if (args.bake == null and args.onNodeHTTPRequest == .zero and ((args.static_routes.items.len + args.user_routes_to_build.items.len) == 0 and !opts.has_user_routes) and opts.is_fetch_required) {
+        } else if (args.onNodeHTTPRequest == .zero and ((args.static_routes.items.len + args.user_routes_to_build.items.len) == 0 and !opts.has_user_routes) and opts.is_fetch_required) {
             if (global.hasException()) return error.JSError;
             return global.throwInvalidArguments(
                 \\Bun.serve() needs either:
@@ -949,7 +845,7 @@ pub fn fromJS(
                         if (args.ssl_config == null) {
                             args.ssl_config = ssl_config;
                         } else {
-                            if ((ssl_config.server_name orelse "")[0] == 0) {
+                            if (ssl_config.server_name == null or ssl_config.server_name.?[0] == 0) {
                                 defer ssl_config.deinit();
                                 return global.throwInvalidArguments("SNI tls object must have a serverName", .{});
                             }

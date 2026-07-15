@@ -14,6 +14,15 @@ if (!codegenRoot) {
 const base_dir = join(import.meta.dirname, "../bake");
 process.chdir(base_dir); // to make bun build predictable in development
 
+if (!existsSync(join(base_dir, "DevServer.zig"))) {
+  for (const file of ["bake.client.js", "bake.server.js", "bake.error.js"]) {
+    rmSync(join(codegenRoot, file), { force: true });
+  }
+  writeIfNotChanged(join(codegenRoot, "bake_empty_file"), "Bake is disabled in this runtime");
+  console.log("-> Bake disabled; stale runtime bundles removed");
+  process.exit(0);
+}
+
 function convertZigEnum(zig: string, names: string[]) {
   let output = "/** Generated from DevServer.zig */\n";
   for (const name of names) {

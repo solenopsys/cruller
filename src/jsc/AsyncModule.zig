@@ -38,282 +38,17 @@ pub const AsyncModule = struct {
     };
 
     pub const Queue = struct {
-        map: Map = .empty,
-        scheduled: u32 = 0,
-        concurrent_task_count: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
-
-        const DeferredDependencyError = struct {
-            dependency: Dependency,
-            root_dependency_id: Install.DependencyID,
-            err: anyerror,
-        };
-
-        pub const Map = std.ArrayListUnmanaged(AsyncModule);
-
-        pub fn enqueue(this: *Queue, globalObject: *JSGlobalObject, opts: anytype) void {
-            debug("enqueue: {s}", .{opts.specifier});
-            var module = AsyncModule.init(opts, globalObject) catch unreachable;
-            module.poll_ref.ref(this.vm());
-
-            this.map.append(this.vm().allocator, module) catch unreachable;
-            this.vm().packageManager().drainDependencyList();
+        /// Package installation during module resolution is intentionally disabled.
+        pub fn enqueue(_: *Queue, _: *JSGlobalObject, _: anytype) void {
+            unreachable;
         }
 
-        pub fn onDependencyError(ctx: *anyopaque, dependency: Dependency, root_dependency_id: Install.DependencyID, err: anyerror) void {
-            var this = bun.cast(*Queue, ctx);
-            debug("onDependencyError: {s}", .{this.vm().packageManager().lockfile.str(&dependency.name)});
-
-            var modules: []AsyncModule = this.map.items;
-            var i: usize = 0;
-            outer: for (modules) |module_| {
-                var module = module_;
-                const root_dependency_ids = module.parse_result.pending_imports.items(.root_dependency_id);
-                for (root_dependency_ids, 0..) |dep, dep_i| {
-                    if (dep != root_dependency_id) continue;
-                    module.resolveError(
-                        this.vm(),
-                        module.parse_result.pending_imports.items(.import_record_id)[dep_i],
-                        .{
-                            .name = this.vm().packageManager().lockfile.str(&dependency.name),
-                            .err = err,
-                            .url = "",
-                            .version = dependency.version,
-                        },
-                    ) catch unreachable;
-                    continue :outer;
-                }
-
-                modules[i] = module;
-                i += 1;
-            }
-            this.map.items.len = i;
-        }
-        pub fn onWakeHandler(ctx: *anyopaque, _: *PackageManager) void {
-            debug("onWake", .{});
-            var this = bun.cast(*Queue, ctx);
-            this.vm().enqueueTaskConcurrent(jsc.ConcurrentTask.createFrom(this));
-        }
-
-        pub fn onPoll(this: *Queue) void {
-            debug("onPoll", .{});
-            this.runTasks();
-            this.pollModules();
-        }
-
-        pub fn runTasks(this: *Queue) void {
-            var pm = this.vm().packageManager();
-
-            if (Output.enable_ansi_colors_stderr) {
-                pm.startProgressBarIfNone();
-                pm.runTasks(
-                    *Queue,
-                    this,
-                    .{
-                        .onExtract = {},
-                        .onResolve = onResolve,
-                        .onPackageManifestError = onPackageManifestError,
-                        .onPackageDownloadError = onPackageDownloadError,
-                        .progress_bar = true,
-                    },
-                    true,
-                    PackageManager.Options.LogLevel.default,
-                ) catch unreachable;
-            } else {
-                pm.runTasks(
-                    *Queue,
-                    this,
-                    .{
-                        .onExtract = {},
-                        .onResolve = onResolve,
-                        .onPackageManifestError = onPackageManifestError,
-                        .onPackageDownloadError = onPackageDownloadError,
-                    },
-                    true,
-                    PackageManager.Options.LogLevel.default_no_progress,
-                ) catch unreachable;
-            }
-        }
-
-        pub fn onResolve(_: *Queue) void {
-            debug("onResolve", .{});
-        }
-
-        pub fn onPackageManifestError(
-            this: *Queue,
-            name: []const u8,
-            err: anyerror,
-            url: []const u8,
-        ) void {
-            debug("onPackageManifestError: {s}", .{name});
-
-            var modules: []AsyncModule = this.map.items;
-            var i: usize = 0;
-            outer: for (modules) |module_| {
-                var module = module_;
-                const tags = module.parse_result.pending_imports.items(.tag);
-                for (tags, 0..) |tag, tag_i| {
-                    if (tag == .resolve) {
-                        const esms = module.parse_result.pending_imports.items(.esm);
-                        const esm = esms[tag_i];
-                        const string_bufs = module.parse_result.pending_imports.items(.string_buf);
-
-                        if (!strings.eql(esm.name.slice(string_bufs[tag_i]), name)) continue;
-
-                        const versions = module.parse_result.pending_imports.items(.dependency);
-
-                        module.resolveError(
-                            this.vm(),
-                            module.parse_result.pending_imports.items(.import_record_id)[tag_i],
-                            .{
-                                .name = name,
-                                .err = err,
-                                .url = url,
-                                .version = versions[tag_i],
-                            },
-                        ) catch unreachable;
-                        continue :outer;
-                    }
-                }
-
-                modules[i] = module;
-                i += 1;
-            }
-            this.map.items.len = i;
-        }
-
-        pub fn onPackageDownloadError(
-            this: *Queue,
-            package_id: Install.PackageID,
-            name: []const u8,
-            resolution: *const Install.Resolution,
-            err: anyerror,
-            url: []const u8,
-        ) void {
-            debug("onPackageDownloadError: {s}", .{name});
-
-            const resolution_ids = this.vm().packageManager().lockfile.buffers.resolutions.items;
-            var modules: []AsyncModule = this.map.items;
-            var i: usize = 0;
-            outer: for (modules) |module_| {
-                var module = module_;
-                const record_ids = module.parse_result.pending_imports.items(.import_record_id);
-                const root_dependency_ids = module.parse_result.pending_imports.items(.root_dependency_id);
-                for (root_dependency_ids, 0..) |dependency_id, import_id| {
-                    if (resolution_ids[dependency_id] != package_id) continue;
-                    module.downloadError(
-                        this.vm(),
-                        record_ids[import_id],
-                        .{
-                            .name = name,
-                            .resolution = resolution.*,
-                            .err = err,
-                            .url = url,
-                        },
-                    ) catch unreachable;
-                    continue :outer;
-                }
-
-                modules[i] = module;
-                i += 1;
-            }
-            this.map.items.len = i;
-        }
-
-        pub fn pollModules(this: *Queue) void {
-            var pm = this.vm().packageManager();
-            if (pm.pending_tasks.load(.monotonic) > 0) return;
-
-            var modules: []AsyncModule = this.map.items;
-            var i: usize = 0;
-
-            for (modules) |mod| {
-                var module = mod;
-                var tags = module.parse_result.pending_imports.items(.tag);
-                const root_dependency_ids = module.parse_result.pending_imports.items(.root_dependency_id);
-                // var esms = module.parse_result.pending_imports.items(.esm);
-                // var versions = module.parse_result.pending_imports.items(.dependency);
-                var done_count: usize = 0;
-                for (tags, 0..) |tag, tag_i| {
-                    const root_id = root_dependency_ids[tag_i];
-                    const resolution_ids = pm.lockfile.buffers.resolutions.items;
-                    if (root_id >= resolution_ids.len) continue;
-                    const package_id = resolution_ids[root_id];
-
-                    switch (tag) {
-                        .resolve => {
-                            if (package_id == Install.invalid_package_id) {
-                                continue;
-                            }
-
-                            // if we get here, the package has already been resolved.
-                            tags[tag_i] = .download;
-                        },
-                        .download => {
-                            if (package_id == Install.invalid_package_id) {
-                                unreachable;
-                            }
-                        },
-                        .done => {
-                            done_count += 1;
-                            continue;
-                        },
-                    }
-
-                    if (package_id == Install.invalid_package_id) {
-                        continue;
-                    }
-
-                    const package = pm.lockfile.packages.get(package_id);
-                    bun.assert(package.resolution.tag != .root);
-
-                    var name_and_version_hash: ?u64 = null;
-                    var patchfile_hash: ?u64 = null;
-                    switch (pm.determinePreinstallState(package, pm.lockfile, &name_and_version_hash, &patchfile_hash)) {
-                        .done => {
-                            // we are only truly done if all the dependencies are done.
-                            const current_tasks = pm.total_tasks;
-                            // so if enqueuing all the dependencies produces no new tasks, we are done.
-                            pm.enqueueDependencyList(package.dependencies);
-                            if (current_tasks == pm.total_tasks) {
-                                tags[tag_i] = .done;
-                                done_count += 1;
-                            }
-                        },
-                        .extracting => {
-                            // we are extracting the package
-                            // we need to wait for the next poll
-                            continue;
-                        },
-                        .extract => {},
-                        else => {},
-                    }
-                }
-
-                if (done_count == tags.len) {
-                    module.done(this.vm());
-                } else {
-                    modules[i] = module;
-                    i += 1;
-                }
-            }
-            this.map.items.len = i;
-            if (i == 0) {
-                // ensure we always end the progress bar
-                this.vm().packageManager().endProgressBar();
-            }
-        }
+        pub fn onDependencyError(_: *anyopaque, _: Dependency, _: Install.DependencyID, _: anyerror) void {}
+        pub fn onWakeHandler(_: *anyopaque, _: *PackageManager) void {}
+        pub fn onPoll(_: *Queue) void {}
 
         pub fn vm(this: *Queue) *VirtualMachine {
             return @alignCast(@fieldParentPtr("modules", this));
-        }
-
-        comptime {
-            // Ensure VirtualMachine has a field named "modules" of the correct type
-            // If this fails, the @fieldParentPtr in vm() above needs to be updated
-            const VM = @import("./VirtualMachine.zig");
-            if (!@hasField(VM, "modules")) {
-                @compileError("VirtualMachine must have a 'modules' field for AsyncModule.Queue.vm() to work");
-            }
         }
     };
 
@@ -759,7 +494,6 @@ const std = @import("std");
 const PackageJSON = @import("../resolver/package_json.zig").PackageJSON;
 const dumpSource = @import("./RuntimeTranspilerStore.zig").dumpSource;
 
-
 const bun = @import("bun");
 const Async = bun.Async;
 const Environment = bun.Environment;
@@ -785,8 +519,12 @@ const Install = struct {
     pub const PackageID = u32;
     pub const invalid_package_id: u32 = std.math.maxInt(u32);
 };
-const Dependency = struct { pub const Version = struct {}; };
+const Dependency = struct {
+    pub const Version = struct {};
+};
 const PackageManager = struct {
-    pub const Options = struct { pub const LogLevel = enum { default }; };
+    pub const Options = struct {
+        pub const LogLevel = enum { default };
+    };
     pub const WakeHandler = struct {};
 };

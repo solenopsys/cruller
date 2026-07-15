@@ -22,7 +22,7 @@ import { libjpegTurbo } from "./libjpeg-turbo.ts";
 import { libspng } from "./libspng.ts";
 import { libuv } from "./libuv.ts";
 import { libwebp } from "./libwebp.ts";
-import { lolhtml } from "./lolhtml.ts";
+
 import { lshpack } from "./lshpack.ts";
 import { lsqpack } from "./lsqpack.ts";
 import { lsquic } from "./lsquic.ts";
@@ -60,7 +60,6 @@ export const allDeps: readonly Dependency[] = [
   hdrhistogram,
   highway,
   libuv,
-  lolhtml,
   lshpack,
   lsqpack,
   mimalloc,
@@ -89,7 +88,6 @@ export {
   libspng,
   libuv,
   libwebp,
-  lolhtml,
   lshpack,
   lsqpack,
   lsquic,

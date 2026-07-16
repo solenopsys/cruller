@@ -121,6 +121,13 @@ pub fn build(b: *std.Build) void {
     obj.root_module.pic = true;
     obj.root_module.omit_frame_pointer = false;
     obj.root_module.strip = false;
+    // LLVM 21's StackProtector pass segfaults in
+    // AttributeList::addAttributeAtIndex while instrumenting `sspstrong`
+    // functions in this module graph (reproduced standalone via `llc-21` on
+    // the `--verbose-llvm-ir` dump: crashes on `debug.waitForOtherThreadToFinishPanicking`,
+    // a stock std/debug.zig function, not bzrt-specific code — see problem.md).
+    // Disable stack-protector codegen until upstream fixes it.
+    obj.root_module.stack_protector = false;
     obj.use_llvm = !no_llvm;
     obj.use_lld = !no_llvm;
     if (lto) obj.lto = .full;

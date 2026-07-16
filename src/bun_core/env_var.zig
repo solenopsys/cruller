@@ -51,6 +51,13 @@ pub const BUN_DEBUG_ENABLE_RESTORE_FROM_TRANSPILER_CACHE = New(kind.boolean, "BU
 /// to return true without mutating `/etc/NIXOS` on the shared rootfs. Used by
 /// `test/regression/issue/29290.test.ts` to exercise the Nix-host branch.
 pub const BUN_DEBUG_FORCE_NIX_HOST = New(kind.boolean, "BUN_DEBUG_FORCE_NIX_HOST", .{ .default = false });
+/// `resolver.zig`'s `show_crash_trace` path hits `@breakpoint()` on every
+/// resolve call in debug/ASan builds — intended for stepping through the
+/// resolver under a debugger, but a plain SIGTRAP with no handler installed
+/// kills the process outright when nothing is attached. Opt-in only, so
+/// running a debug build directly (smoke tests, `bun-debug script.js`)
+/// doesn't require gdb/lldb by default.
+pub const BUN_DEBUG_BREAK_ON_RESOLVE = New(kind.boolean, "BUN_DEBUG_BREAK_ON_RESOLVE", .{ .default = false });
 pub const BUN_DEBUG_HASH_RANDOM_SEED = New(kind.unsigned, "BUN_DEBUG_HASH_RANDOM_SEED", .{ .deser = .{ .error_handling = .not_set } });
 pub const BUN_DEBUG_QUIET_LOGS = New(kind.boolean, "BUN_DEBUG_QUIET_LOGS", .{});
 pub const BUN_DEBUG_TEST_TEXT_LOCKFILE = New(kind.boolean, "BUN_DEBUG_TEST_TEXT_LOCKFILE", .{ .default = false });

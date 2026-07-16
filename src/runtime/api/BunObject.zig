@@ -21,7 +21,7 @@ pub const BunObject = struct {
     pub const gzipSync = toJSCallback(JSZlib.gzipSync);
     pub const indexOfLine = toJSCallback(Bun.indexOfLine);
     pub const inflateSync = toJSCallback(JSZlib.inflateSync);
-    // bzrt-cut:     pub const jest = toJSCallback(@import("../../test_runner/jest.zig").Jest.call);
+    pub const jest = toJSCallback(cutFeatureCallback); // bzrt-cut: test_runner
     pub const listen = toJSCallback(host_fn.wrapStaticMethod(api.Listener, "listen", false));
     pub const mmap = toJSCallback(Bun.mmapFile);
     pub const nanoseconds = toJSCallback(Bun.nanoseconds);
@@ -165,7 +165,7 @@ pub const BunObject = struct {
         @export(&BunObject.gzipSync, .{ .name = callbackName("gzipSync") });
         @export(&BunObject.indexOfLine, .{ .name = callbackName("indexOfLine") });
         @export(&BunObject.inflateSync, .{ .name = callbackName("inflateSync") });
-        // bzrt-cut: jest (test_runner вырезан)
+        @export(&BunObject.jest, .{ .name = callbackName("jest") });
         @export(&BunObject.listen, .{ .name = callbackName("listen") });
         @export(&BunObject.mmap, .{ .name = callbackName("mmap") });
         @export(&BunObject.nanoseconds, .{ .name = callbackName("nanoseconds") });

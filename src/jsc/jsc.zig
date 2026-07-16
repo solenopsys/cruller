@@ -18,7 +18,8 @@ pub const wtf = @import("./WTF.zig").WTF;
 pub fn initialize(eval_mode: bool) void {
     markBinding(@src());
     bun.analytics.Features.jsc += 1;
-    JSCInitialize(std.os.environ.ptr, std.os.environ.len, onJSCInvalidEnvVar, eval_mode);
+    const environ = std.mem.span(std.c.environ);
+    JSCInitialize(@ptrCast(environ.ptr), environ.len, onJSCInvalidEnvVar, eval_mode);
 }
 
 pub const JSValue = @import("./JSValue.zig").JSValue;

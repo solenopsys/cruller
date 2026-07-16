@@ -9,12 +9,10 @@ comptime {
     _bun.assert(builtin.target.cpu.arch.endian() == .little);
 }
 
-extern fn bun_warn_avx_missing(url: [*:0]const u8) void;
-
 pub extern "c" var _environ: ?*anyopaque;
 pub extern "c" var environ: ?*anyopaque;
 
-pub fn main() void {
+pub fn main(init: std.process.Init.Minimal) void {
     _bun.crash_handler.init();
 
     if (Environment.isPosix) {
@@ -52,23 +50,34 @@ pub fn main() void {
                 break :blk 0;
         break :blk @as(i128, ts.sec) * std.time.ns_per_s + @as(i128, ts.nsec);
     };
-    _bun.initArgv() catch |err| {
+    _bun.initArgv(init.args) catch |err| {
         Output.panic("Failed to initialize argv: {s}\n", .{@errorName(err)});
     };
 
     Output.Source.Stdio.init();
     defer Output.flush();
-    if (comptime @hasDecl(_bun, "cli")) {
-        if (Environment.isX64 and Environment.enableSIMD and Environment.isPosix) {
-            bun_warn_avx_missing(_bun.cli.UpgradeCommand.Bun__githubBaselineURL.ptr);
-        }
-    }
 
     _bun.StackCheck.configureThread();
     _bun.ParentDeathWatchdog.install();
 
-    if (comptime @hasDecl(_bun, "cli")) {
-        _bun.cli.Cli.start(_bun.default_allocator);
+    // bzrt: src/cli/ (arg parsing, subcommands) is fully removed — minimal
+    // process entrypoint per tz.md. argv[0] is the executable itself;
+    // argv[1] is the pre-built entry file to run, except for the two
+    // version-reporting flags the build system's own smoke test relies on.
+    if (_bun.argv.len > 1 and _bun.strings.eqlComptime(_bun.argv[1], "--version")) {
+        Output.writer().writeAll(_bun.Global.package_json_version ++ "\n") catch {};
+        _bun.Global.exit(0);
+    } else if (_bun.argv.len > 1 and _bun.strings.eqlComptime(_bun.argv[1], "--revision")) {
+        Output.writer().writeAll(_bun.Global.package_json_version_with_revision ++ "\n") catch {};
+        _bun.Global.exit(0);
+    } else if (_bun.argv.len > 1) {
+        _bun.bun_js.runEntryFile(_bun.default_allocator, _bun.argv[1]) catch |err| {
+            Output.panic("Failed to run entry file: {s}\n", .{@errorName(err)});
+        };
+    } else {
+        Output.errGeneric("Usage: {s} path/to/script.js", .{if (_bun.argv.len > 0) _bun.argv[0] else "bun-debug"});
+        Output.flush();
+        _bun.Global.exit(1);
     }
     _bun.Global.exit(0);
 }

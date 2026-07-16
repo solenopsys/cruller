@@ -673,6 +673,7 @@ pub const Expr = @import("./ast/Expr.zig");
 pub const ExprNodeIndex = Expr;
 pub const G = @import("./ast/G.zig");
 pub const Macro = struct {
+    pub const namespace: string = "macro";
     pub const namespaceWithColon: string = "macro:";
 
     pub fn isMacroPath(_: string) bool {
@@ -733,7 +734,7 @@ pub const BabyList = bun.BabyList;
 const string = []const u8;
 
 const std = @import("std");
-// bzrt-cut: const TypeScript = @import("./parser.zig").TypeScript;
+const TypeScript = @import("./parser.zig").TypeScript;
 
 const bun = @import("bun");
 const Environment = bun.Environment;

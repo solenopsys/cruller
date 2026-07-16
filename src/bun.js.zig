@@ -24,11 +24,8 @@ pub const Run = struct {
         js_ast.Stmt.Data.Store.create();
         const arena = Arena.init();
 
-        // Load bunfig.toml unless disabled by compile flags
-        // Note: config loading with execArgv is handled earlier in cli.zig via loadConfig
-        if (!ctx.debug.loaded_bunfig and !graph_ptr.flags.disable_autoload_bunfig) {
-            try bun.cli.Arguments.loadConfigPath(ctx.allocator, true, "bunfig.toml", ctx, .RunCommand);
-        }
+        // bzrt-cut: bunfig.toml loading lived in cli/Arguments.zig, which is
+        // fully removed (no CLI/config-file parsing in this runtime).
 
         run = .{
             .vm = try VirtualMachine.initWithModuleGraph(.{
@@ -38,7 +35,6 @@ pub const Run = struct {
                 .graph = graph_ptr,
                 .is_main_thread = true,
                 .smol = ctx.runtime_options.smol,
-                .debugger = ctx.runtime_options.debugger,
                 .dns_result_order = DNSResolver.Order.fromStringOrDie(ctx.runtime_options.dns_result_order),
             }),
             .arena = arena,
@@ -130,36 +126,13 @@ pub const Run = struct {
         }
     }
 
-    fn bootBunShell(ctx: Command.Context, entry_path: []const u8) !bun.shell.ExitCode {
-        @branchHint(.cold);
-
-        // this is a hack: make dummy bundler so we can use its `.runEnvLoader()` function to populate environment variables probably should split out the functionality
-        var bundle = try bun.Transpiler.init(
-            ctx.allocator,
-            ctx.log,
-            try @import("./jsc/config.zig").configureTransformOptionsForBunVM(ctx.allocator, ctx.args),
-            null,
-        );
-        try bundle.runEnvLoader(bundle.options.env.disable_default_env_files);
-        const mini = jsc.MiniEventLoop.initGlobal(bundle.env, null);
-        mini.top_level_dir = ctx.args.absolute_working_dir orelse "";
-        return bun.shell.Interpreter.initAndRunFromFile(ctx, mini, entry_path);
-    }
-
     pub fn boot(ctx: Command.Context, entry_path: string, loader: ?bun.options.Loader) !void {
         jsc.markBinding(@src());
 
-        if (!ctx.debug.loaded_bunfig) {
-            try bun.cli.Arguments.loadConfigPath(ctx.allocator, true, "bunfig.toml", ctx, .RunCommand);
-        }
-
-        // The shell does not need to initialize JSC.
-        // JSC initialization costs 1-3ms. We skip this if we know it's a shell script.
-        if (strings.endsWithComptime(entry_path, ".sh")) {
-            const exit_code = try bootBunShell(ctx, entry_path);
-            Global.exit(exit_code);
-            return;
-        }
+        // bzrt-cut: bunfig.toml loading lived in cli/Arguments.zig, which is
+        // fully removed (no CLI/config-file parsing in this runtime).
+        // bzrt-cut: `src/shell/` is fully removed — no special-cased `.sh`
+        // entrypoint execution (shell is CUT per tz.md).
 
         bun.jsc.initialize(ctx.runtime_options.eval.eval_and_print);
 
@@ -176,8 +149,7 @@ pub const Run = struct {
                     .store_fd = ctx.debug.hot_reload != .none,
                     .smol = ctx.runtime_options.smol,
                     .eval = ctx.runtime_options.eval.eval_and_print,
-                    .debugger = ctx.runtime_options.debugger,
-                    .dns_result_order = DNSResolver.Order.fromStringOrDie(ctx.runtime_options.dns_result_order),
+                        .dns_result_order = DNSResolver.Order.fromStringOrDie(ctx.runtime_options.dns_result_order),
                     .is_main_thread = true,
                 },
             ),
@@ -458,12 +430,9 @@ pub const Run = struct {
 
         // Initial synchronous evaluation of the entrypoint is done (TLA may
         // still be pending and will resolve in the loop below); the embedded
-        // source pages are off the hot path now. No-op unless this is a
-        // compiled standalone binary, and skip under --watch/--hot since those
-        // re-read source on every reload.
-        if (!this.vm.isWatcherEnabled()) {
-            bun.StandaloneModuleGraph.hintSourcePagesDontNeed();
-        }
+        // source pages are off the hot path now.
+        // bzrt-cut: `hintSourcePagesDontNeed` no-op'd for standalone compiled
+        // binaries only, and standalone executables are CUT — nothing to do.
 
         {
             if (this.vm.isWatcherEnabled()) {
@@ -543,7 +512,6 @@ pub const Run = struct {
             );
         }
 
-        bun.api.napi.fixDeadCodeElimination();
         bun.webcore.BakeResponse.fixDeadCodeElimination();
         bun.crash_handler.fixDeadCodeElimination();
         @import("./jsc/JSSecrets.zig").fixDeadCodeElimination();
@@ -562,6 +530,35 @@ pub const Run = struct {
         }
     }
 };
+
+/// bzrt: minimal production loader. `src/cli/` (arg parsing, bunfig.toml,
+/// command dispatch) is fully removed; this builds just enough of
+/// `Command.ContextData` for `Run.boot` (real, un-CUT bootstrap/event-loop
+/// code) to load and run a single pre-built entrypoint file.
+pub fn runEntryFile(allocator: std.mem.Allocator, entry_path: [:0]const u8) !void {
+    const log = try allocator.create(logger.Log);
+    log.* = logger.Log.init(allocator);
+
+    const ctx = try allocator.create(Command.ContextData);
+    ctx.* = .{
+        .start_time = bun.start_time,
+        .allocator = allocator,
+        .log = log,
+        .args = .{
+            .entry_points = &.{entry_path},
+            .inject = &.{},
+            .external = &.{},
+            .main_fields = &.{},
+            .env_files = &.{},
+            .extension_order = &.{},
+            .conditions = &.{},
+            .ignore_dce_annotations = false,
+            .bunfig_path = "",
+        },
+    };
+
+    try Run.boot(ctx, entry_path, null);
+}
 
 pub export fn Bun__onResolveEntryPointResult(global: *jsc.JSGlobalObject, callframe: *jsc.CallFrame) callconv(jsc.conv) noreturn {
     const arguments = callframe.arguments_old(1).slice();
@@ -631,7 +628,19 @@ const CPUProfiler = @import("./jsc/BunCPUProfiler.zig");
 const HeapProfiler = @import("./jsc/BunHeapProfiler.zig");
 const options = @import("./bundler/options.zig");
 const std = @import("std");
-const Command = struct { pub const Context = struct {}; }; // bzrt: cli вырезан
+// bzrt: CLI (src/cli/) is fully removed, but the option-carrying types it
+// used to own live in options_types/Context.zig (kept independent of cli/
+// on purpose, see that file's header) and are still real/complete. Alias
+// them here instead of stubbing Context to `struct {}` so Run.boot/Run.start
+// below (real bootstrap/event-loop code, not CUT) keep working.
+const Command = struct {
+    const ContextTypes = @import("./options_types/Context.zig");
+    pub const Context = ContextTypes.Context;
+    pub const ContextData = ContextTypes.ContextData;
+    pub const RuntimeOptions = ContextTypes.RuntimeOptions;
+    pub const DebugOptions = ContextTypes.DebugOptions;
+    pub const HotReload = ContextTypes.HotReload;
+};
 const which = @import("./which/which.zig").which;
 
 const bun = @import("bun");
@@ -647,5 +656,8 @@ const AsyncHTTP = bun.http.AsyncHTTP;
 const DNSResolver = bun.api.dns.Resolver;
 
 comptime {
+    _ = @import("./jsc/virtual_machine_exports.zig");
     _ = @import("./jsc/vm_exports_stub.zig");
+    _ = @import("./jsc/napi_stub.zig");
+    _ = @import("./jsc/cut_bindings_stub.zig");
 }

@@ -900,7 +900,7 @@ pub const Transpiler = struct {
                 opts.features.dont_bundle_twice = this_parse.dont_bundle_twice;
 
                 opts.features.commonjs_at_runtime = this_parse.allow_commonjs;
-                opts.module_type = @intFromEnum(this_parse.module_type);
+                opts.module_type = this_parse.module_type;
 
                 opts.tree_shaking = transpiler.options.tree_shaking;
                 opts.features.inlining = false;
@@ -917,7 +917,7 @@ pub const Transpiler = struct {
                 opts.features.minify_identifiers = transpiler.options.minify_identifiers;
                 opts.features.dead_code_elimination = false;
                 opts.features.remove_cjs_module_wrapper = this_parse.remove_cjs_module_wrapper;
-                opts.features.bundler_feature_flags = @as(*const bun.StringSet, @ptrCast(@alignCast(@as(*u64, @ptrFromInt(0x1000)))));
+                opts.features.bundler_feature_flags = transpiler.options.bundler_feature_flags;
                 opts.features.repl_mode = false;
                 opts.repl_mode = false;
 
@@ -932,7 +932,7 @@ pub const Transpiler = struct {
                 opts.macro_context = undefined;
 
                 opts.features.is_macro_runtime = target == .bun_macro;
-                opts.features.replace_exports = @ptrCast(@as(*anyopaque, @ptrCast(@constCast(&this_parse.replace_exports))));
+                opts.features.replace_exports = this_parse.replace_exports;
 
                 return switch ((transpiler.resolver.caches.js.parse(
                     allocator,
@@ -1428,64 +1428,7 @@ const JSON = bun.json;
 const MutableString = bun.MutableString;
 const Output = bun.Output;
 const default_allocator = bun.default_allocator;
-pub const js_parser = struct {
-    pub const Range = struct {};
-    pub const ScanPassResult = struct {};
-    pub const Result = bun.ast.Result;
-    pub const Parser = struct {
-        pub fn init(_: anytype, _: anytype, _: anytype, _: anytype, _: anytype) !Parser {
-            return .{};
-        }
-        pub fn parse(_: *Parser) anyerror!?Result {
-            return error.ParseError;
-        }
-        lexer: Lexer = .{},
-        pub const Lexer = struct {
-            pub fn range(_: @This()) @import("../logger/logger.zig").Range {
-                return .{};
-            }
-        };
-        pub const Options = struct {
-            pub fn init(_: anytype, _: anytype) Options {
-                return .{};
-            }
-            features: struct {
-                emit_decorator_metadata: bool = false,
-                standard_decorators: bool = false,
-                allow_runtime: bool = false,
-                set_breakpoint_on_first_line: bool = false,
-                trim_unused_imports: bool = false,
-                no_macros: bool = false,
-                dont_bundle_twice: bool = false,
-                commonjs_at_runtime: bool = false,
-                inlining: bool = false,
-                auto_import_jsx: bool = false,
-                lower_using: bool = false,
-                inject_jest_globals: bool = false,
-                minify_syntax: bool = false,
-                minify_identifiers: bool = false,
-                dead_code_elimination: bool = false,
-                remove_cjs_module_wrapper: bool = false,
-                bundler_feature_flags: *const bun.StringSet = @as(*const bun.StringSet, @ptrCast(@alignCast(@as(*u64, @ptrFromInt(0x1000))))),
-                repl_mode: bool = false,
-                top_level_await: bool = false,
-                is_macro_runtime: bool = false,
-                replace_exports: ?*anyopaque = null,
-                runtime_transpiler_cache: ?*anyopaque = null,
-                jsx: u8 = 0,
-            } = .{},
-            jsx: u8 = 0,
-            transform_only: bool = false,
-            ignore_dce_annotations: bool = false,
-            module_type: u8 = 0,
-            tree_shaking: bool = false,
-            warn_about_unbundled_modules: bool = false,
-            repl_mode: bool = false,
-            macro_context: ?*anyopaque = null,
-            filepath_hash_for_hmr: u64 = 0,
-        };
-    };
-};
+const js_parser = bun.js_parser;
 const js_printer = bun.js_printer;
 const jsc = bun.jsc;
 const logger = bun.logger;

@@ -1211,7 +1211,7 @@ pub const fs = @import("./resolver/fs.zig");
 pub const transpiler = @import("./bundler/transpiler.zig");
 pub const Transpiler = transpiler.Transpiler;
 pub const which = @import("./which/which.zig").which;
-// bzrt-cut: pub const js_parser = @import("./js_parser/parser.zig");
+pub const js_parser = @import("./js_parser/parser.zig");
 pub const js_printer = @import("./js_printer/js_printer.zig");
 pub const js_lexer = @import("./js_parser/lexer.zig");
 pub const ast = @import("./js_parser/js_parser.zig");
@@ -2148,13 +2148,12 @@ pub fn appendOptionsEnv(env: []const u8, comptime ArgType: type, args: *std.arra
     }
 }
 
-pub fn initArgv() !void {
+pub fn initArgv(process_args: std.process.Args) !void {
     if (comptime Environment.isPosix) {
-        const argc: usize = @intCast(@extern(*c_int, .{ .name = "std___argc" }).*);
-        const argv_ptr: [*][*:0]u8 = @extern(*[*][*:0]u8, .{ .name = "std___argv" }).*;
-        argv = try bun.default_allocator.alloc([:0]const u8, argc);
+        const vector = process_args.vector;
+        argv = try bun.default_allocator.alloc([:0]const u8, vector.len);
         for (0..argv.len) |i| {
-            argv[i] = std.mem.sliceTo(argv_ptr[i], 0);
+            argv[i] = std.mem.sliceTo(vector[i], 0);
         }
     } else if (comptime Environment.isWindows) {
         // Zig's implementation of `std.process.argsAlloc()`on Windows platforms

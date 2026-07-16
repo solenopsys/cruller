@@ -1,3 +1,20 @@
+/// bzrt-cut: stand-in for `bun.bake.Framework` (Bake dev-server/HMR is CUT).
+/// `Options.framework` is never set to non-null in this runtime; only the
+/// shape needed for the two dead-in-practice call sites that dereference it.
+pub const BzrtFrameworkStub = struct {
+    server_components: ?ServerComponents = null,
+    react_fast_refresh: ?ReactFastRefresh = null,
+
+    pub const ServerComponents = struct {
+        server_runtime_import: []const u8,
+        server_register_client_reference: []const u8 = "registerClientReference",
+    };
+
+    pub const ReactFastRefresh = struct {
+        import_source: []const u8 = "react-refresh/runtime",
+    };
+};
+
 pub const Parser = struct {
     options: Options,
     lexer: js_lexer.Lexer,
@@ -39,7 +56,12 @@ pub const Parser = struct {
 
         /// When using react fast refresh or server components, the framework is
         /// able to customize what import sources are used.
-        framework: ?*bun.bake.Framework = null,
+        /// bzrt-cut: `bun.bake` (the Bake dev-server/HMR framework) is CUT;
+        /// this never gets set to non-null in this runtime (no framework
+        /// config wiring), so only the fields the two call sites below
+        /// (`fw.server_components`, `fw.react_fast_refresh`) actually
+        /// dereference need to exist here.
+        framework: ?*BzrtFrameworkStub = null,
 
         /// REPL mode: transforms code for interactive evaluation
         /// - Wraps lone object literals `{...}` in parentheses
@@ -532,7 +554,7 @@ pub const Parser = struct {
             // The TypeScript compiler itself contains code with this pattern, so
             // it's important to implement this optimization.
 
-            var preprocessed_enums: std.ArrayListUnmanaged([]js_ast.Part) = .{};
+            var preprocessed_enums: std.ArrayListUnmanaged([]js_ast.Part) = .empty;
             var preprocessed_enum_i: usize = 0;
             if (p.scopes_in_order_for_enum.count() > 0) {
                 for (stmts) |*stmt| {

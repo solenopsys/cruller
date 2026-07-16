@@ -659,7 +659,10 @@ pub const Resolver = struct {
                 import_path,
                 source_dir,
             });
-            @breakpoint();
+            // bzrt: opt-in (see BUN_DEBUG_BREAK_ON_RESOLVE doc) — un-gated,
+            // this fires on every single resolve with no SIGTRAP handler
+            // installed, killing the process unless a debugger is attached.
+            if (bun.env_var.BUN_DEBUG_BREAK_ON_RESOLVE.get()) @breakpoint();
         }
 
         const original_order = r.extension_order;

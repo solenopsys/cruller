@@ -97,7 +97,12 @@ pub fn init(this: *INotifyWatcher, _: []const u8) !void {
     this.coalesce_interval = std.math.cast(isize, bun.env_var.BUN_INOTIFY_COALESCE_INTERVAL.get()) orelse 100_000;
 
     // TODO: convert to bun.sys.Error
-    this.fd = .fromNative(try std.posix.inotify_init1(IN.CLOEXEC));
+    // `std.posix.inotify_init1` (the errno-checked convenience wrapper) was
+    // removed in Zig 0.16; call the raw `system` (libc) syscall and check
+    // errno ourselves, same pattern as `read()` below.
+    const rc = system.inotify_init1(IN.CLOEXEC);
+    if (std.posix.errno(rc) != .SUCCESS) return error.INotifyInitFailed;
+    this.fd = .fromNative(@intCast(rc));
     this.eventlist_bytes = &(try bun.default_allocator.alignedAlloc(EventListBytes, .of(Event), 1))[0];
     log("{f} init", .{this.fd});
 }

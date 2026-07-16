@@ -1978,6 +1978,13 @@ function getRelevantTests(cwd, testModifiers, testExpectations) {
  * @returns {string}
  */
 function getExecPath(bunExe) {
+  // bzrt's minimal launcher intentionally has no `--print` CLI mode. When a
+  // concrete binary path is supplied, validate it directly instead of asking
+  // the runtime to discover itself.
+  if (bunExe.includes(sep) && isExecutable(bunExe)) {
+    return realpathSync(bunExe);
+  }
+
   let execPath;
   let error;
   try {

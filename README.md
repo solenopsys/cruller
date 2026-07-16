@@ -22,6 +22,13 @@ serving, SSR (`react-dom/server` over `Bun.serve`), WebSockets, and the `webcore
 JavaScriptCore (`bun-webkit`) is kept as-is — it's a vendored, pre-built dependency consumed through its C
 API, untouched by the Zig version bump.
 
+## Status
+
+This is work in progress. The Zig semantic check and debug binary build pass,
+and basic CJS/ESM execution works. The built-in HTTP `fetch()` client currently
+corrupts response body bytes, so the runtime is not ready for production use.
+See [`problem.md`](problem.md) for the current verification results and blocker.
+
 ## What was cut
 
 - Package manager (`bun install`, lockfile, npm registry client, lifecycle scripts)

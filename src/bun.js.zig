@@ -149,7 +149,7 @@ pub const Run = struct {
                     .store_fd = ctx.debug.hot_reload != .none,
                     .smol = ctx.runtime_options.smol,
                     .eval = ctx.runtime_options.eval.eval_and_print,
-                        .dns_result_order = DNSResolver.Order.fromStringOrDie(ctx.runtime_options.dns_result_order),
+                    .dns_result_order = DNSResolver.Order.fromStringOrDie(ctx.runtime_options.dns_result_order),
                     .is_main_thread = true,
                 },
             ),
@@ -536,6 +536,16 @@ pub const Run = struct {
 /// `Command.ContextData` for `Run.boot` (real, un-CUT bootstrap/event-loop
 /// code) to load and run a single pre-built entrypoint file.
 pub fn runEntryFile(allocator: std.mem.Allocator, entry_path: [:0]const u8) !void {
+    // The resolver treats a bare relative path as a package specifier. The
+    // removed CLI used to canonicalize entrypoints before reaching Run.boot,
+    // so retain that boundary here for the minimal launcher.
+    var cwd_buf: bun.PathBuffer = undefined;
+    const cwd = switch (bun.sys.getcwd(&cwd_buf)) {
+        .result => |path| path,
+        .err => return error.SystemResources,
+    };
+    const absolute_entry_path = try allocator.dupeZ(u8, bun.path.joinAbsString(cwd, &.{entry_path}, .auto));
+
     const log = try allocator.create(logger.Log);
     log.* = logger.Log.init(allocator);
 
@@ -545,7 +555,7 @@ pub fn runEntryFile(allocator: std.mem.Allocator, entry_path: [:0]const u8) !voi
         .allocator = allocator,
         .log = log,
         .args = .{
-            .entry_points = &.{entry_path},
+            .entry_points = &.{absolute_entry_path},
             .inject = &.{},
             .external = &.{},
             .main_fields = &.{},
@@ -557,7 +567,7 @@ pub fn runEntryFile(allocator: std.mem.Allocator, entry_path: [:0]const u8) !voi
         },
     };
 
-    try Run.boot(ctx, entry_path, null);
+    try Run.boot(ctx, absolute_entry_path, null);
 }
 
 pub export fn Bun__onResolveEntryPointResult(global: *jsc.JSGlobalObject, callframe: *jsc.CallFrame) callconv(jsc.conv) noreturn {

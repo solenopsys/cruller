@@ -71,7 +71,18 @@ pub fn main(init: std.process.Init.Minimal) void {
         Output.writer().writeAll(_bun.Global.package_json_version_with_revision ++ "\n") catch {};
         _bun.Global.exit(0);
     } else if (_bun.argv.len > 1) {
-        _bun.bun_js.runEntryFile(_bun.default_allocator, _bun.argv[1]) catch |err| {
+        const entry_path = blk: {
+            if (_bun.strings.eqlComptime(_bun.argv[1], "run")) {
+                for (_bun.argv[2..]) |arg| {
+                    if (arg.len > 0 and arg[0] != '-') break :blk arg;
+                }
+                Output.errGeneric("Usage: {s} run path/to/script.js", .{_bun.argv[0]});
+                Output.flush();
+                _bun.Global.exit(1);
+            }
+            break :blk _bun.argv[1];
+        };
+        _bun.bun_js.runEntryFile(_bun.default_allocator, entry_path) catch |err| {
             Output.panic("Failed to run entry file: {s}\n", .{@errorName(err)});
         };
     } else {

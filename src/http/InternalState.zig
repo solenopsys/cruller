@@ -66,7 +66,8 @@ pub fn reset(this: *InternalState, allocator: std.mem.Allocator) void {
     this.response_message_buffer.deinit();
 
     const body_msg = this.body_out_str;
-    if (body_msg) |body| body.reset();
+    // The caller owns this buffer and consumes it from the result callback.
+    // `HTTPClient.start` clears it before a subsequent request reuses it.
     this.decompressor.deinit();
 
     // just in case we check and free to avoid leaks

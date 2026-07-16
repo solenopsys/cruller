@@ -30,6 +30,21 @@ its generated JavaScript assets, and passes the applicable Node path and HTTP
 smoke checks. See [`problem.md`](problem.md) for the current verification scope
 and remaining limitations.
 
+## Measurements
+
+Compared with the official Bun 1.3.14 Linux x64 release, the stripped
+`ReleaseFast` Cruller runtime is 76,570,712 bytes (73.0 MiB), down 17.4%
+(about 18%) from Bun's 92,752,752-byte (88.5 MiB) binary. The reduction comes
+from removing the production-unneeded subsystems listed below while retaining
+JavaScriptCore, HTTP, webcore, and their required native dependencies.
+
+The V8 Benchmark Suite Crypto workload (pure JavaScript RSA) was run five times
+against each runtime on the same host. Cruller's median score was 72,759 versus
+71,319 for Bun, about 2% higher. The run-to-run variation was larger than that
+difference, so this establishes JS-engine performance parity rather than a
+reliable 2% speedup. JavaScriptCore itself is retained, so this result is
+expected; HTTP throughput and tail latency require separate benchmarks.
+
 ## What was cut
 
 - Package manager (`bun install`, lockfile, npm registry client, lifecycle scripts)

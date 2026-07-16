@@ -51,21 +51,21 @@ pub const Fallback = struct {
 
     pub inline fn errorJS() string {
         return if (Environment.codegen_embed)
-            @embedFile("bun-error/index.js")
+            @import("codegen_embed").file("bun-error/index.js")
         else
             bun.runtimeEmbedFile(.codegen, "bun-error/index.js");
     }
 
     pub inline fn errorCSS() string {
         return if (Environment.codegen_embed)
-            @embedFile("bun-error/bun-error.css")
+            @import("codegen_embed").file("bun-error/bun-error.css")
         else
             bun.runtimeEmbedFile(.codegen, "bun-error/bun-error.css");
     }
 
     pub inline fn fallbackDecoderJS() string {
         return if (Environment.codegen_embed)
-            @embedFile("fallback-decoder.js")
+            @import("codegen_embed").file("fallback-decoder.js")
         else
             bun.runtimeEmbedFile(.codegen, "fallback-decoder.js");
     }
@@ -131,7 +131,7 @@ pub const Fallback = struct {
 pub const Runtime = struct {
     pub fn sourceCode() string {
         return if (Environment.codegen_embed)
-            @embedFile("runtime.out.js")
+            @import("codegen_embed").file("runtime.out.js")
         else
             bun.runtimeEmbedFile(.codegen, "runtime.out.js");
     }

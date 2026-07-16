@@ -24,10 +24,11 @@ API, untouched by the Zig version bump.
 
 ## Status
 
-This is work in progress. The Zig semantic check and debug binary build pass,
-and basic CJS/ESM execution works. The built-in HTTP `fetch()` client currently
-corrupts response body bytes, so the runtime is not ready for production use.
-See [`problem.md`](problem.md) for the current verification results and blocker.
+This is work in progress. The Zig semantic check and debug/release builds pass,
+and basic CJS/ESM execution works. The release runtime is `ReleaseFast`, embeds
+its generated JavaScript assets, and passes the applicable Node path and HTTP
+smoke checks. See [`problem.md`](problem.md) for the current verification scope
+and remaining limitations.
 
 ## What was cut
 

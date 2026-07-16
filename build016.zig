@@ -59,6 +59,9 @@ pub fn build(b: *std.Build) void {
     bun.addImport("translated-c-headers", b.createModule(.{
         .root_source_file = translate_c.getOutput(),
     }));
+    bun.addImport("codegen_embed", b.createModule(.{
+        .root_source_file = b.path("src/codegen_embed_debug.zig"),
+    }));
     inline for (.{
         .{ "zlib-internal", "src/zlib_sys/posix.zig" },
         .{ "async", "src/aio/posix_event_loop.zig" },

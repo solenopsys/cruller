@@ -78,6 +78,10 @@ pub fn build(b: *std.Build) void {
     bun_module.addImport("translated-c-headers", b.createModule(.{
         .root_source_file = translate_c.getOutput(),
     }));
+    const codegen_embed_module = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = b.pathJoin(&.{ codegen_path_abs, "embed.zig" }) },
+    });
+    bun_module.addImport("codegen_embed", codegen_embed_module);
 
     inline for (.{
         .{ "zlib-internal", "src/zlib_sys/posix.zig" },

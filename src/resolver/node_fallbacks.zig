@@ -18,7 +18,7 @@ pub const FallbackModule = struct {
         const Getter = struct {
             fn get() string {
                 if (bun.Environment.codegen_embed) {
-                    return @embedFile(code_path);
+                    return @import("codegen_embed").file(code_path);
                 }
 
                 return bun.runtimeEmbedFile(.codegen, code_path);

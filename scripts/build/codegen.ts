@@ -287,6 +287,7 @@ export function emitCodegen(n: Ninja, cfg: Config, sources: Sources): CodegenOut
   const ctx: Ctx = { n, cfg, sources, o, dirStamp };
 
   emitBunError(ctx);
+  emitCodegenEmbed(ctx);
   emitFallbackDecoder(ctx);
   emitRuntimeJs(ctx);
   emitNodeFallbacks(ctx);
@@ -409,6 +410,26 @@ function emitBunError({ n, cfg, sources, o, dirStamp }: Ctx): void {
 
   o.all.push(...outputs);
   o.zigInputs.push(...outputs);
+}
+
+function emitCodegenEmbed({ n, cfg, o, dirStamp }: Ctx): void {
+  const script = resolve(cfg.cwd, "src", "codegen", "generate-codegen-embed.ts");
+  const out = resolve(cfg.codegenDir, "embed.zig");
+
+  n.build({
+    outputs: [out],
+    rule: "codegen",
+    inputs: [script],
+    orderOnlyInputs: [dirStamp],
+    vars: {
+      cwd: cfg.cwd,
+      desc: "codegen embed module",
+      args: shJoin(cfg, ["run", script, out]),
+    },
+  });
+
+  o.all.push(out);
+  o.zigInputs.push(out);
 }
 
 function emitFallbackDecoder({ n, cfg, o, dirStamp }: Ctx): void {

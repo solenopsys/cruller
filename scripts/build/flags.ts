@@ -1007,7 +1007,9 @@ export function linkDepends(cfg: Config): string[] {
  * Strip step only runs for plain release builds (bun-profile → bun).
  * Not for debug/asan/valgrind/assertions variants — those keep symbols.
  *
- * Always: --strip-all --strip-debug --discard-all.
+ * Always: --strip-all --discard-all. `--strip-debug` must not follow
+ * `--strip-all`: GNU strip treats it as the selected strip mode and keeps
+ * the regular symbol table.
  * Platform extras remove unwind/exception sections we compile without
  * (no -fexceptions, lolhtml built with panic=abort).
  *
@@ -1018,7 +1020,7 @@ export function linkDepends(cfg: Config): string[] {
 export const stripFlags: Flag[] = [
   {
     // Core strip: symbols + debug info + local symbols.
-    flag: ["--strip-all", "--strip-debug", "--discard-all"],
+    flag: ["--strip-all", "--discard-all"],
     desc: "Remove symbols, debug info, local symbols",
   },
   {

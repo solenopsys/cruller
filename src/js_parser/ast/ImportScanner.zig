@@ -428,7 +428,10 @@ pub fn scan(
                 // Rewrite this export to be:
                 // exports.default =
                 // But only if it's anonymous
-                if (!hot_module_reloading_transformations and will_transform_to_common_js and P != bun.bundle_v2.AstBuilder) {
+                // bzrt-cut: bundler v2 (`bun.bundle_v2`) is fully removed; `P`
+                // is never its `AstBuilder` special-case parser variant here,
+                // so that comparison is dropped rather than kept unreachable.
+                if (!hot_module_reloading_transformations and will_transform_to_common_js) {
                     const expr = st.value.toExpr();
                     var export_default_args = try p.allocator.alloc(Expr, 2);
                     export_default_args[0] = p.@"module.exports"(expr.loc);

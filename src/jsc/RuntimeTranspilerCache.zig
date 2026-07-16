@@ -293,12 +293,12 @@ pub const RuntimeTranspilerCache = struct {
 
         pub fn load(
             this: *Entry,
-            file: std.fs.File,
+            file: std.Io.File,
             sourcemap_allocator: std.mem.Allocator,
             output_code_allocator: std.mem.Allocator,
             esm_record_allocator: std.mem.Allocator,
         ) !void {
-            const stat_size = try file.getEndPos();
+            const stat_size = (try bun.compat.fileStat(file)).size;
             if (stat_size < Metadata.size + this.metadata.output_byte_length + this.metadata.sourcemap_byte_length) {
                 return error.MissingData;
             }
@@ -311,7 +311,7 @@ pub const RuntimeTranspilerCache = struct {
                 .utf8 => brk: {
                     const utf8 = try output_code_allocator.alloc(u8, this.metadata.output_byte_length);
                     errdefer output_code_allocator.free(utf8);
-                    const read_bytes = try file.preadAll(utf8, this.metadata.output_byte_offset);
+                    const read_bytes = try bun.compat.fileReadAllAt(file, utf8, this.metadata.output_byte_offset);
                     if (read_bytes != this.metadata.output_byte_length) {
                         return error.MissingData;
                     }
@@ -320,7 +320,7 @@ pub const RuntimeTranspilerCache = struct {
                 .latin1 => brk: {
                     var latin1, const bytes = bun.String.createUninitialized(.latin1, this.metadata.output_byte_length);
                     errdefer latin1.deref();
-                    const read_bytes = try file.preadAll(bytes, this.metadata.output_byte_offset);
+                    const read_bytes = try bun.compat.fileReadAllAt(file, bytes, this.metadata.output_byte_offset);
 
                     if (this.metadata.output_hash != 0) {
                         if (hash(latin1.latin1()) != this.metadata.output_hash) {
@@ -338,7 +338,7 @@ pub const RuntimeTranspilerCache = struct {
                     var string, const chars = bun.String.createUninitialized(.utf16, this.metadata.output_byte_length / 2);
                     errdefer string.deref();
 
-                    const read_bytes = try file.preadAll(std.mem.sliceAsBytes(chars), this.metadata.output_byte_offset);
+                    const read_bytes = try bun.compat.fileReadAllAt(file, std.mem.sliceAsBytes(chars), this.metadata.output_byte_offset);
                     if (read_bytes != this.metadata.output_byte_length) {
                         return error.MissingData;
                     }
@@ -365,7 +365,7 @@ pub const RuntimeTranspilerCache = struct {
             if (this.metadata.sourcemap_byte_length > 0) {
                 const sourcemap = try sourcemap_allocator.alloc(u8, this.metadata.sourcemap_byte_length);
                 errdefer sourcemap_allocator.free(sourcemap);
-                const read_bytes = try file.preadAll(sourcemap, this.metadata.sourcemap_byte_offset);
+                const read_bytes = try bun.compat.fileReadAllAt(file, sourcemap, this.metadata.sourcemap_byte_offset);
                 if (read_bytes != this.metadata.sourcemap_byte_length) {
                     return error.MissingData;
                 }
@@ -376,7 +376,7 @@ pub const RuntimeTranspilerCache = struct {
             if (this.metadata.esm_record_byte_length > 0) {
                 const esm_record = try esm_record_allocator.alloc(u8, this.metadata.esm_record_byte_length);
                 errdefer esm_record_allocator.free(esm_record);
-                const read_bytes = try file.preadAll(esm_record, this.metadata.esm_record_byte_offset);
+                const read_bytes = try bun.compat.fileReadAllAt(file, esm_record, this.metadata.esm_record_byte_offset);
                 if (read_bytes != this.metadata.esm_record_byte_length) {
                     return error.MissingData;
                 }
@@ -543,7 +543,7 @@ pub const RuntimeTranspilerCache = struct {
         }
 
         const file = cache_fd.stdFile();
-        const metadata_bytes = try file.preadAll(&metadata_bytes_buf, 0);
+        const metadata_bytes = try bun.compat.fileReadAll(file, &metadata_bytes_buf);
         if (comptime bun.Environment.isWindows) try file.seekTo(0);
         var metadata_stream = bun.compat.fixedBufferStream(metadata_bytes_buf[0..metadata_bytes]);
 

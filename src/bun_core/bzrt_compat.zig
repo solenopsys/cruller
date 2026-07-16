@@ -158,6 +158,9 @@ pub fn ArrayHashMapManaged(comptime K: type, comptime V: type, comptime Context:
         pub fn sort(self: *Self, context: anytype) void {
             self.unmanaged.sort(context);
         }
+        pub fn shrinkAndFree(self: *Self, new_len: usize) void {
+            self.unmanaged.shrinkAndFree(self.allocator, new_len);
+        }
     };
 }
 
@@ -611,6 +614,10 @@ pub fn fileStat(file: std.Io.File) !std.Io.File.Stat {
 
 pub fn fileReadAll(file: std.Io.File, buffer: []u8) !usize {
     return std.Io.File.readPositionalAll(file, io(), buffer, 0);
+}
+
+pub fn fileReadAllAt(file: std.Io.File, buffer: []u8, offset: u64) !usize {
+    return std.Io.File.readPositionalAll(file, io(), buffer, offset);
 }
 
 pub fn dirClose(dir: std.Io.Dir) void {

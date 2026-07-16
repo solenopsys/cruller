@@ -64,6 +64,7 @@ struct node_module;
 #include "BunHttp2CommonStrings.h"
 #include "BunMarkdownTagStrings.h"
 #include "BunGlobalScope.h"
+#define NODE_API_EXPERIMENTAL_BASIC_ENV_OPT_OUT
 #include <js_native_api.h>
 #include <node_api.h>
 #include "BakeAdditionsToGlobalObject.h"
@@ -437,7 +438,10 @@ public:
     bool isInsideErrorPrepareStackTraceCallback = false;
 
     template<typename T>
-    using LazyPropertyOfGlobalObject = LazyProperty<JSGlobalObject, T>;
+    using LazyPropertyOfGlobalObject = LazyProperty<GlobalObject, T>;
+
+    template<typename T>
+    using Initializer = typename LazyProperty<GlobalObject, T>::Initializer;
 
     using ThenablesArray = std::array<WriteBarrier<JSFunction>, promiseFunctionsSize + 1>;
     using NapiModuleAndExports = std::array<WriteBarrier<Unknown>, 2>;
@@ -777,8 +781,8 @@ public:
     // visitChildren wiring needed (and it must NOT keep its values alive).
     std::unique_ptr<Bun::SecureContextCache> m_secureContextCache;
 
-    WTF::Vector<WTF::Ref<NapiEnv>> m_napiEnvs;
-    Ref<NapiEnv> makeNapiEnv(const napi_module&);
+    WTF::Vector<WTF::Ref<struct napi_env__>> m_napiEnvs;
+    Ref<struct napi_env__> makeNapiEnv(const napi_module&);
     napi_env makeNapiEnvForFFI();
     bool hasNapiFinalizers() const;
     void adoptNapiEnvsForTestIsolation(GlobalObject* oldGlobal);

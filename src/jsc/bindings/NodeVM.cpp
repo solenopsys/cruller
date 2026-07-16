@@ -1565,10 +1565,10 @@ JSC::JSValue createNodeVMBinding(Zig::GlobalObject* globalObject)
 
 void configureNodeVM(JSC::VM& vm, Zig::GlobalObject* globalObject)
 {
-    globalObject->m_nodeVMDontContextify.initLater([](const LazyProperty<JSC::JSGlobalObject, Symbol>::Initializer& init) {
+    globalObject->m_nodeVMDontContextify.initLater([](const LazyProperty<Zig::GlobalObject, Symbol>::Initializer& init) {
         init.set(JSC::Symbol::createWithDescription(init.vm, "vm_dont_contextify"_s));
     });
-    globalObject->m_nodeVMUseMainContextDefaultLoader.initLater([](const LazyProperty<JSC::JSGlobalObject, Symbol>::Initializer& init) {
+    globalObject->m_nodeVMUseMainContextDefaultLoader.initLater([](const LazyProperty<Zig::GlobalObject, Symbol>::Initializer& init) {
         init.set(JSC::Symbol::createWithDescription(init.vm, "vm_use_main_context_default_loader"_s));
     });
 
@@ -1612,12 +1612,12 @@ void configureNodeVM(JSC::VM& vm, Zig::GlobalObject* globalObject)
         });
 
     globalObject->m_cachedNodeVMGlobalObjectStructure.initLater(
-        [](const JSC::LazyProperty<JSC::JSGlobalObject, Structure>::Initializer& init) {
+        [](const JSC::LazyProperty<Zig::GlobalObject, JSC::Structure>::Initializer& init) {
             init.set(createNodeVMGlobalObjectStructure(init.vm));
         });
 
     globalObject->m_cachedNodeVMSpecialSandboxStructure.initLater(
-        [](const JSC::LazyProperty<JSC::JSGlobalObject, Structure>::Initializer& init) {
+        [](const JSC::LazyProperty<Zig::GlobalObject, JSC::Structure>::Initializer& init) {
             init.set(NodeVMSpecialSandbox::createStructure(init.vm, init.owner, init.owner->objectPrototype())); // TODO(@heimskr): or maybe jsNull() for the prototype?
         });
 }

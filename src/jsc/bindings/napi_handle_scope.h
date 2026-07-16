@@ -2,8 +2,7 @@
 
 #include "BunClientData.h"
 #include "root.h"
-
-typedef struct NapiEnv* napi_env;
+#include <js_native_api_types.h>
 
 namespace Bun {
 

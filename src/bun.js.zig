@@ -645,3 +645,7 @@ const transpiler = bun.transpiler;
 const Arena = bun.allocators.MimallocArena;
 const AsyncHTTP = bun.http.AsyncHTTP;
 const DNSResolver = bun.api.dns.Resolver;
+
+comptime {
+    _ = @import("./jsc/vm_exports_stub.zig");
+}

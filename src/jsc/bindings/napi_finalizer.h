@@ -5,6 +5,8 @@
 
 extern "C" void napi_internal_enqueue_finalizer(napi_env env, napi_finalize finalize_cb, void* data, void* hint);
 
+struct napi_env__;
+
 namespace Bun {
 
 class NapiFinalizer {
@@ -17,7 +19,7 @@ public:
 
     NapiFinalizer() = default;
 
-    void call(WTF::RefPtr<NapiEnv> env, void* data, bool immediate = false);
+    void call(WTF::RefPtr<struct napi_env__> env, void* data, bool immediate = false);
     void clear();
 
     inline napi_finalize callback() const { return m_callback; }

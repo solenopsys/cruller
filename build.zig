@@ -134,7 +134,7 @@ pub fn build(b: *std.Build) void {
         obj.root_module.sanitize_address = true;
     }
     if (enable_fuzzilli) obj.sanitize_coverage_trace_pc_guard = true;
-    obj.bundle_compiler_rt = false;
+    obj.bundle_compiler_rt = true;
     obj.bundle_ubsan_rt = false;
 
     const obj_step = b.step("obj", "Собрать bun-zig.o для линковки с C++/JSC");

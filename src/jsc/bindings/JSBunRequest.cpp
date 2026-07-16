@@ -101,8 +101,9 @@ extern "C" void* Request__clone(void* internalZigRequestPointer, JSGlobalObject*
 JSBunRequest* JSBunRequest::clone(JSC::VM& vm, JSGlobalObject* globalObject)
 {
     auto throwScope = DECLARE_THROW_SCOPE(vm);
+    auto* zigGlobal = defaultGlobalObject(globalObject);
 
-    auto* structure = defaultGlobalObject(globalObject)->m_JSBunRequestStructure.getInitializedOnMainThread(globalObject);
+    auto* structure = zigGlobal->m_JSBunRequestStructure.getInitializedOnMainThread(zigGlobal);
     auto* raw = Request__clone(this->wrapped(), globalObject);
     EXCEPTION_ASSERT(!!raw == !throwScope.exception());
     RETURN_IF_EXCEPTION(throwScope, nullptr);
@@ -112,7 +113,7 @@ JSBunRequest* JSBunRequest::clone(JSC::VM& vm, JSGlobalObject* globalObject)
     if (auto* params = this->params()) {
         // TODO: Use JSC's internal `cloneObject()` if/when it's exposed
         // https://github.com/oven-sh/WebKit/blob/c5e9b9e327194f520af2c28679adb0ea1fa902ad/Source/JavaScriptCore/runtime/JSGlobalObjectFunctions.cpp#L1018-L1099
-        auto* prototype = defaultGlobalObject(globalObject)->m_JSBunRequestParamsPrototype.get(globalObject);
+        auto* prototype = zigGlobal->m_JSBunRequestParamsPrototype.get(zigGlobal);
         auto* paramsClone = JSC::constructEmptyObject(globalObject, prototype);
 
         auto propertyNames = PropertyNameArrayBuilder(vm, JSC::PropertyNameMode::Strings, JSC::PrivateSymbolMode::Exclude);
@@ -227,7 +228,8 @@ JSC_DEFINE_CUSTOM_GETTER(jsJSBunRequestGetParams, (JSC::JSGlobalObject * globalO
 
     auto* params = request->params();
     if (!params) {
-        auto* prototype = defaultGlobalObject(globalObject)->m_JSBunRequestParamsPrototype.get(globalObject);
+        auto* zigGlobal = defaultGlobalObject(globalObject);
+        auto* prototype = zigGlobal->m_JSBunRequestParamsPrototype.get(zigGlobal);
         params = JSC::constructEmptyObject(globalObject, prototype);
         request->setParams(params);
     }

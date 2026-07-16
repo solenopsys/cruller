@@ -1435,7 +1435,7 @@ extern "C" JS_EXPORT napi_status
 node_api_create_external_string_latin1(napi_env env,
     char* str,
     size_t length,
-    napi_finalize finalize_callback,
+    node_api_basic_finalize finalize_callback,
     void* finalize_hint,
     napi_value* result,
     bool* copied)
@@ -1470,7 +1470,7 @@ extern "C" JS_EXPORT napi_status
 node_api_create_external_string_utf16(napi_env env,
     char16_t* str,
     size_t length,
-    napi_finalize finalize_callback,
+    node_api_basic_finalize finalize_callback,
     void* finalize_hint,
     napi_value* result,
     bool* copied)
@@ -1559,7 +1559,7 @@ extern "C" JS_EXPORT napi_status node_api_create_buffer_from_arraybuffer(napi_en
     return napi_set_last_error(env, napi_ok);
 }
 
-extern "C" JS_EXPORT napi_status node_api_get_module_file_name(napi_env env,
+extern "C" JS_EXPORT napi_status node_api_get_module_file_name(node_api_basic_env env,
     const char** result)
 {
     NAPI_PREAMBLE(env);
@@ -2049,7 +2049,7 @@ private:
 
 extern "C" napi_status napi_create_external_buffer(napi_env env, size_t length,
     void* data,
-    napi_finalize finalize_cb,
+    node_api_basic_finalize finalize_cb,
     void* finalize_hint,
     napi_value* result)
 {
@@ -2103,7 +2103,7 @@ extern "C" napi_status napi_create_external_buffer(napi_env env, size_t length,
 }
 
 extern "C" napi_status napi_create_external_arraybuffer(napi_env env, void* external_data, size_t byte_length,
-    napi_finalize finalize_cb, void* finalize_hint, napi_value* result)
+    node_api_basic_finalize finalize_cb, void* finalize_hint, napi_value* result)
 {
     NAPI_PREAMBLE(env);
     NAPI_CHECK_ARG(env, result);
@@ -2407,7 +2407,7 @@ extern "C" napi_status napi_create_object(napi_env env, napi_value* result)
 }
 
 extern "C" napi_status napi_create_external(napi_env env, void* data,
-    napi_finalize finalize_cb,
+    node_api_basic_finalize finalize_cb,
     void* finalize_hint,
     napi_value* result)
 {
@@ -2635,7 +2635,7 @@ extern "C" napi_status napi_get_value_external(napi_env env, napi_value value,
 }
 
 // TODO: make this per addon instead of globally shared for ALL addons
-extern "C" napi_status napi_get_instance_data(napi_env env,
+extern "C" napi_status napi_get_instance_data(node_api_basic_env env,
     void** data)
 {
     NAPI_PREAMBLE(env);
@@ -2678,7 +2678,7 @@ extern "C" napi_status napi_run_script(napi_env env, napi_value script,
     return napi_set_last_error(env, napi_ok);
 }
 
-extern "C" napi_status napi_set_instance_data(napi_env env,
+extern "C" napi_status napi_set_instance_data(node_api_basic_env env,
     void* data,
     napi_finalize finalize_cb,
     void* finalize_hint)
@@ -2929,7 +2929,7 @@ extern "C" napi_status napi_check_object_type_tag(napi_env env, napi_value value
     NAPI_RETURN_SUCCESS(env);
 }
 
-extern "C" JS_EXPORT napi_status napi_add_env_cleanup_hook(napi_env env,
+extern "C" JS_EXPORT napi_status napi_add_env_cleanup_hook(node_api_basic_env env,
     void (*function)(void*),
     void* data)
 {
@@ -2940,7 +2940,7 @@ extern "C" JS_EXPORT napi_status napi_add_env_cleanup_hook(napi_env env,
     NAPI_RETURN_SUCCESS(env);
 }
 
-extern "C" JS_EXPORT napi_status napi_add_async_cleanup_hook(napi_env env,
+extern "C" JS_EXPORT napi_status napi_add_async_cleanup_hook(node_api_basic_env env,
     napi_async_cleanup_hook function,
     void* data, napi_async_cleanup_hook_handle* handle_out)
 {
@@ -2954,7 +2954,7 @@ extern "C" JS_EXPORT napi_status napi_add_async_cleanup_hook(napi_env env,
     NAPI_RETURN_SUCCESS(env);
 }
 
-extern "C" JS_EXPORT napi_status napi_remove_env_cleanup_hook(napi_env env,
+extern "C" JS_EXPORT napi_status napi_remove_env_cleanup_hook(node_api_basic_env env,
     void (*function)(void*),
     void* data)
 {

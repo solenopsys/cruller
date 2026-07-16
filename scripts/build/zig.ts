@@ -53,16 +53,17 @@ export const ZIG_COMMIT = "04e7f6ac1e009525bc00934f20199c68f04e0a24";
  * a non-ASAN CI artifact if cross-unit inlining matters.
  */
 function codegenThreads(cfg: Config): number {
-  if (cfg.windows) return 1;
-  if (cfg.lto) return 1;
-  if (cfg.ci) {
-    // ASAN is a test-only build (not shipped), so cross-shard IPO loss is
-    // fine and the speedup is worth it. The count is FIXED so zig-only and
-    // link-only — which run on different machines — agree on the artifact
-    // names. Non-asan CI stays at 1: shipped releases want full IPO.
-    return cfg.asan ? CI_ASAN_CODEGEN_THREADS : 1;
-  }
-  return availableParallelism();
+  // Vanilla build.zig emits a single bun-zig.o regardless of
+  // llvm_codegen_threads. The Oven-patched zig sharding (llvm_no_merge_shards)
+  // is not available. Keep at 1 until build.zig is updated to support sharding.
+  return 1;
+  // TODO: re-enable when build.zig handles shard emission:
+  // if (cfg.windows) return 1;
+  // if (cfg.lto) return 1;
+  // if (cfg.ci) {
+  //   return cfg.asan ? CI_ASAN_CODEGEN_THREADS : 1;
+  // }
+  // return availableParallelism();
 }
 
 /** Fixed shard count for CI ASAN builds. Matches getZigAgent's instance size. */

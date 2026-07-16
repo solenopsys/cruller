@@ -36,7 +36,8 @@ SYSV_ABI JSC::EncodedJSValue S3Error__toErrorInstance(const S3Error* arg0,
 
     auto& names = WebCore::builtinNames(vm);
 
-    auto prototype = defaultGlobalObject(globalObject)->m_S3ErrorStructure.getInitializedOnMainThread(globalObject);
+    auto* zigGlobalObject = defaultGlobalObject(globalObject);
+    auto prototype = zigGlobalObject->m_S3ErrorStructure.getInitializedOnMainThread(zigGlobalObject);
     JSC::JSObject* result = JSC::ErrorInstance::create(vm, prototype, message, {});
     result->putDirect(vm, vm.propertyNames->name, defaultGlobalObject(globalObject)->commonStrings().s3ErrorString(globalObject), JSC::PropertyAttribute::DontEnum | 0);
     if (err.code.tag != BunStringTag::Empty) {

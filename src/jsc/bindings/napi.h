@@ -8,6 +8,7 @@
 #include "headers-handwritten.h"
 #include "BunClientData.h"
 #include <JavaScriptCore/CallFrame.h>
+#define NODE_API_EXPERIMENTAL_BASIC_ENV_OPT_OUT
 #include "node_api.h"
 #include <JavaScriptCore/JSWeakValue.h>
 #include "JSFFIFunction.h"
@@ -170,11 +171,11 @@ static bool equal(napi_async_cleanup_hook_handle one, napi_async_cleanup_hook_ha
     } while (0)
 
 // Named this way so we can manipulate napi_env values directly (since napi_env is defined as a pointer to struct napi_env__)
-struct NapiEnv : public WTF::RefCounted<NapiEnv> {
-    WTF_MAKE_STRUCT_TZONE_ALLOCATED(NapiEnv);
+struct napi_env__ : public WTF::RefCounted<napi_env__> {
+    WTF_MAKE_STRUCT_TZONE_ALLOCATED(napi_env__);
 
 public:
-    NapiEnv(Zig::GlobalObject* globalObject, const napi_module& napiModule)
+    napi_env__(Zig::GlobalObject* globalObject, const napi_module& napiModule)
         : m_globalObject(globalObject)
         , m_napiModule(napiModule)
         , m_vm(JSC::getVM(globalObject))
@@ -182,12 +183,12 @@ public:
         napi_internal_register_cleanup_zig(this);
     }
 
-    static Ref<NapiEnv> create(Zig::GlobalObject* globalObject, const napi_module& napiModule)
+    static Ref<napi_env__> create(Zig::GlobalObject* globalObject, const napi_module& napiModule)
     {
-        return adoptRef(*new NapiEnv(globalObject, napiModule));
+        return adoptRef(*new napi_env__(globalObject, napiModule));
     }
 
-    ~NapiEnv()
+    ~napi_env__()
     {
         delete[] filename;
     }
@@ -461,7 +462,7 @@ public:
             }
         }
 
-        void deactivate(NapiEnv& env) const
+        void deactivate(napi_env__& env) const
         {
             if (env.isFinishingFinalizers()) {
                 active = false;
@@ -536,6 +537,8 @@ private:
         }
     }
 };
+
+using NapiEnv = napi_env__;
 
 extern "C" void napi_internal_cleanup_env_cpp(napi_env);
 extern "C" void napi_internal_remove_finalizer(napi_env, napi_finalize callback, void* hint, void* data);

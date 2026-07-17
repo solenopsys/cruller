@@ -13,6 +13,17 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    // The semantic harness imports Zig sources generated from TypeScript.
+    // Keep `zig build ... check` usable from a clean checkout by asking the
+    // existing Ninja graph to materialize only those inputs first.
+    const generate_codegen = b.addSystemCommand(&.{
+        "bun",
+        "scripts/build.ts",
+        "--profile=debug",
+        "--build-dir=build",
+        "--target=codegen",
+    });
+
     // --- build_options: поля 1:1 из BunBuildOptions.buildOptionsModule ---
     const opts = b.addOptions();
     opts.addOption([]const u8, "base_path", b.pathFromRoot("."));
@@ -88,6 +99,7 @@ pub fn build(b: *std.Build) void {
     check_root.addImport("bun", bun);
 
     const obj = b.addObject(.{ .name = "bzrt-check", .root_module = check_root });
+    obj.step.dependOn(&generate_codegen.step);
     const check = b.step("check", "Семантический анализ урезанного дерева");
     check.dependOn(&obj.step);
 }

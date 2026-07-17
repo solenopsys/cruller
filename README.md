@@ -22,6 +22,34 @@ serving, SSR (`react-dom/server` over `Bun.serve`), WebSockets, and the `webcore
 JavaScriptCore (`bun-webkit`) is kept as-is — it's a vendored, pre-built dependency consumed through its C
 API, untouched by the Zig version bump.
 
+## Production Model
+
+Cruller is designed to complement Bun, not compete with it. Development stays
+on the complete Bun toolchain: installing dependencies, transpiling TypeScript,
+bundling, testing, and iterating on an application. That toolchain produces a
+JavaScript entrypoint and assets. Production then runs those prepared artifacts
+on Cruller, whose responsibility is deliberately limited to executing and
+serving them.
+
+This split keeps the maintenance target realistic. Rather than trying to own a
+large general-purpose developer platform, Cruller concentrates its compatibility
+and engineering effort on the production path: predictable server behavior,
+networking, resource control, and embeddability.
+
+The next design directions follow from that boundary:
+
+- strengthen the retained HTTP/2 and HTTP/3 implementation for production use;
+- provide native ZMQ plugins for applications that need message-oriented
+  transport without rebuilding the runtime around it;
+- add a separate QuickJS-based control plane for dynamic memory policies and
+  configuration, keeping complex resource-management decisions out of the
+  application JavaScript VM; and
+- expose the engine as a small dynamic library with a clean Zig interface, so
+  other Zig applications can embed the runtime without inheriting Bun's CLI or
+  development stack.
+
+These are roadmap items, not claims of currently shipped functionality.
+
 ## Status
 
 This is work in progress. The Zig semantic check and debug/release builds pass,
@@ -74,9 +102,15 @@ Compiled with vanilla Zig 0.16 via a dedicated build harness (`build016.zig`), s
 scripts:
 
 ```sh
-cd bun-strip
-zig build --build-file build016.zig check   # semantic check of the trimmed tree
+cd cruller
+zig build --build-file build016.zig check
 ```
+
+The check target first runs the existing code-generation graph to materialize
+the modules under `build/codegen`; it does not build the C++ runtime. This
+bootstrap still requires an installed Bun, because the retained generators are
+TypeScript programs. Replacing that dependency with a Zig-native code-generation
+path remains a separate milestone.
 
 A `bun_core/bzrt_compat.zig` shim provides small replacements for stdlib APIs removed between Zig 0.15 and
 0.16 (`GenericWriter`/`GenericReader`, `NetAddress`, list writers, a monotonic timer, etc.) so the kept code

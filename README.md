@@ -96,6 +96,91 @@ expected; HTTP throughput and tail latency require separate benchmarks.
 - Foundation: `sys`, `collections`, `bun_core`, `string`, `unicode`, `io`, `bun_alloc`, `ptr`, `threading`,
   `crash_handler`, `errno`, `logger`, `router`, `watcher`, `boringssl_sys` (TLS)
 
+
+## Proposed Cruller Runtime Architecture
+
+`libcruller.so` is a stable dynamic library containing JavaScriptCore. The host, protocols, and external interfaces can be changed and rebuilt without rebuilding WebKit/JSC.
+
+Each runtime instance runs in its own thread and has its own VM, heap, scheduler, and allocator.
+
+```text
+┌─────────────────────────────────────────────────────────────────────┐
+│                         CRULLER HOST PROCESS                        │
+│                                                                     │
+│   HTTP/1.1   HTTP/2   HTTP/3   WebSocket   ZMQ   Files   DB   IPC  │
+│      │          │        │         │        │      │      │     │   │
+│      └──────────┴────────┴─────────┴────────┴──────┴──────┴─────┘   │
+│                                 │                                   │
+│                    ┌────────────▼────────────┐                      │
+│                    │   I/O CONTROLLER THREAD │                      │
+│                    │                         │                      │
+│                    │ protocol adapters       │                      │
+│                    │ routing                 │                      │
+│                    │ load balancing          │                      │
+│                    │ runtime lifecycle       │                      │
+│                    │ drain / restart         │                      │
+│                    └───────┬─────────┬───────┘                      │
+│                            │         │                              │
+│                    commands│         │SQE / CQE                     │
+│                  completions│        │buffer references             │
+│                            │         │                              │
+│          ┌─────────────────┘         └───────────────┐              │
+│          │                                           │              │
+│   ┌──────▼───────────┐                       ┌───────▼───────────┐  │
+│   │ COMMAND RINGS    │                       │     io_uring      │  │
+│   │                  │                       │                   │  │
+│   │ invoke           │                       │ network I/O       │  │
+│   │ async call       │                       │ file I/O          │  │
+│   │ completion       │                       │ registered buffers│  │
+│   │ drain / stop     │                       │ fixed files       │  │
+│   └──────┬───────────┘                       └───────┬───────────┘  │
+│          │                                           │              │
+│          │ control                                   │ data path    │
+│          │                                           │              │
+│   ┌──────▼──────────────┐     buffer references     │              │
+│   │ RT THREAD #1        │◄───────────────────────────┤              │
+│   │ libcruller.so       │                            │              │
+│   │ JSC / GC / JS       │────────────────────────────┤              │
+│   │ scheduler           │      async operations      │              │
+│   │ allocator #1        │                            │              │
+│   └─────────────────────┘                            │              │
+│                                                     │              │
+│   ┌─────────────────────┐     buffer references     │              │
+│   │ RT THREAD #2        │◄───────────────────────────┤              │
+│   │ libcruller.so       │                            │              │
+│   │ JSC / GC / JS       │────────────────────────────┘              │
+│   │ scheduler           │      async operations                     │
+│   │ allocator #2        │                                           │
+│   └─────────────────────┘                                           │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+The external interfaces—HTTP/1.1, HTTP/2, HTTP/3, WebSocket, ZeroMQ, files, databases, and IPC—are implemented outside the runtime as replaceable host modules.
+
+The controller converts interface events into messages for a selected runtime and maps runtime asynchronous calls back to the required external interface.
+
+Command rings carry only small control messages:
+
+```text
+INVOKE
+ASYNC_CALL
+COMPLETE
+CANCEL
+DRAIN
+STOP
+```
+
+`io_uring` provides the shared Linux-native data path for both network and file operations. Runtime instances exchange buffer references with the controller instead of copying payloads through the command rings.
+
+Runtime lifecycle:
+
+```text
+ACTIVE → DRAINING → DESTROY → CREATE
+```
+
+The controller stops routing new work to a runtime, lets active operations finish, destroys the runtime together with its allocator, and creates a fresh instance from the same `libcruller.so`.
+
+
 ## Building
 
 Compiled with vanilla Zig 0.16 via a dedicated build harness (`build016.zig`), separate from Bun's own build

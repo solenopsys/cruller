@@ -116,6 +116,16 @@ A `bun_core/bzrt_compat.zig` shim provides small replacements for stdlib APIs re
 0.16 (`GenericWriter`/`GenericReader`, `NetAddress`, list writers, a monotonic timer, etc.) so the kept code
 doesn't need to be rewritten wholesale.
 
+### Container image
+
+`glib.Containerfile` packages the already-built `build/release/bun` (glibc, see
+[`TODO.md`](TODO.md) for the still-missing musl/aarch64 targets):
+
+```sh
+cd cruller
+podman build -f glib.Containerfile -t cruller .
+```
+
 ## License
 
 Cruller is a derivative of [Bun](https://github.com/oven-sh/bun) (MIT-licensed) and inherits its license —

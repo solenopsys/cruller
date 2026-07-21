@@ -203,12 +203,18 @@ doesn't need to be rewritten wholesale.
 
 ### Container image
 
-`glib.Containerfile` packages the already-built `build/release/bun` (glibc, see
-[`TODO.md`](TODO.md) for the still-missing musl/aarch64 targets):
+`glib.Containerfile` packages the already-built `build/release/bun` (glibc):
 
 ```sh
 cd cruller
 podman build -f glib.Containerfile -t cruller .
+```
+
+The x64 musl variant is built natively in Alpine and packaged into a separate
+runtime image. The final binary uses `/lib/ld-musl-x86_64.so.1`:
+
+```sh
+podman build -f musl.Containerfile -t cruller-musl .
 ```
 
 ## License

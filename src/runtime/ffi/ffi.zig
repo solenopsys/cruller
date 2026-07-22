@@ -55,13 +55,37 @@ const Offsets = extern struct {
     }
 };
 
+/// `std.DynLib` can select its manual ELF mapper when this runtime is built
+/// without Zig's libc link flag. That mapper resolves symbols but does not run
+/// a shared object's relocations, so code reached through `bun:ffi` can jump
+/// through an uninitialised GOT entry. FFI libraries must always use the OS
+/// loader.
+const NativeDylib = struct {
+    handle: *anyopaque,
+
+    fn open(path: []const u8) error{FileNotFound}!NativeDylib {
+        const path_z = bun.default_allocator.dupeZ(u8, path) catch return error.FileNotFound;
+        defer bun.default_allocator.free(path_z);
+
+        return .{ .handle = std.c.dlopen(path_z, .{ .NOW = true }) orelse return error.FileNotFound };
+    }
+
+    fn lookup(this: NativeDylib, comptime T: type, symbol: [:0]const u8) ?T {
+        return @ptrCast(std.c.dlsym(this.handle, symbol.ptr) orelse return null);
+    }
+
+    fn close(this: *NativeDylib) void {
+        _ = std.c.dlclose(this.handle);
+    }
+};
+
 pub const FFI = struct {
     pub const js = jsc.Codegen.JSFFI;
     pub const toJS = js.toJS;
     pub const fromJS = js.fromJS;
     pub const fromJSDirect = js.fromJSDirect;
 
-    dylib: ?std.DynLib = null,
+    dylib: ?NativeDylib = null,
     functions: bun.StringArrayHashMapUnmanaged(Function) = .{},
     closed: bool = false,
     shared_state: ?*TCC.State = null,
@@ -1057,12 +1081,12 @@ pub const FFI = struct {
             return global.toInvalidArguments("Expected at least one symbol", .{});
         }
 
-        var dylib: std.DynLib = brk: {
+        var dylib: NativeDylib = brk: {
             // First try using the name directly
-            break :brk std.DynLib.open(name) catch {
+            break :brk NativeDylib.open(name) catch {
                 const backup_name = Fs.FileSystem.instance.abs(&[1]string{name});
                 // if that fails, try resolving the filepath relative to the current working directory
-                break :brk std.DynLib.open(backup_name) catch {
+                break :brk NativeDylib.open(backup_name) catch {
                     // Then, if that fails, report an error with the library name and system error
                     const dlerror_buf = getDlError(bun.default_allocator) catch null;
                     defer if (dlerror_buf) |buf| bun.default_allocator.free(buf);

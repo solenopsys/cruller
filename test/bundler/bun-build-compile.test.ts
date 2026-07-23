@@ -109,7 +109,7 @@ describe("Bun.build compile", () => {
     const result = await Bun.build({
       entrypoints: [join(dir + "", "app.js")],
       compile: {
-        outfile: "app-with-resources",
+        outfile: join(dir + "", "app-with-resources"),
       },
     });
 

@@ -8,7 +8,7 @@ const ObjectFormat = enum { obj, bc };
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
-    const optimize = b.standardOptimizeOption(.{});
+    const optimize = b.option(std.builtin.OptimizeMode, "optimize", "Prioritize performance, safety, or binary size") orelse .ReleaseFast;
 
     // Keep this option surface compatible with scripts/build/zig.ts. The
     // native build invokes `zig build obj` with these values for every profile.

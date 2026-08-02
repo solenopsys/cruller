@@ -36,27 +36,23 @@ large general-purpose developer platform, Cruller concentrates its compatibility
 and engineering effort on the production path: predictable server behavior,
 networking, resource control, and embeddability.
 
-The next design directions follow from that boundary:
+## Roadmap
 
-- strengthen the retained HTTP/2 and HTTP/3 implementation for production use;
-- provide native ZMQ plugins for applications that need message-oriented
-  transport without rebuilding the runtime around it;
-- add a separate QuickJS-based control plane for dynamic memory policies and
-  configuration, keeping complex resource-management decisions out of the
-  application JavaScript VM; and
-- expose the engine as a small dynamic library with a clean Zig interface, so
-  other Zig applications can embed the runtime without inheriting Bun's CLI or
-  development stack.
+1. Separate the WebKit runtime into an RT library and define a common Zig
+   interface for runtime implementations.
+2. Add V8 as an RT implementation behind that interface.
+3. Add QuickJS as an RT implementation behind that interface.
+4. Build a test suite for performance measurement and memory-leak detection.
+5. Expand the networking interfaces and eliminate memory leaks in every RT
+   implementation.
 
 These are roadmap items, not claims of currently shipped functionality.
 
 ## Status
 
-This is work in progress. The Zig semantic check and debug/release builds pass,
-and basic CJS/ESM execution works. The release runtime is `ReleaseFast`, embeds
-its generated JavaScript assets, and passes the applicable Node path and HTTP
-smoke checks. See [`problem.md`](problem.md) for the current verification scope
-and remaining limitations.
+Cruller is in production. The `ReleaseFast` runtime embeds its generated
+JavaScript assets and is ready to execute and serve prepared application
+artifacts.
 
 ## Measurements
 

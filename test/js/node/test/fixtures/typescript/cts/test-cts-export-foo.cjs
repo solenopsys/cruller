@@ -1,3 +1,4 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-console.log(eval("typeof module === 'undefined'"));
+const foo = 'Hello, TypeScript!';
+module.exports = { foo };

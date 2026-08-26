@@ -5,6 +5,13 @@ pub const bindgen = @import("./jsc/bindgen.zig");
 
 pub fn applyStandaloneRuntimeFlags(_: *bun.Transpiler, _: *const bun.StandaloneModuleGraph) void {}
 
+pub const SourceLoadedHook = struct {
+    context: *anyopaque,
+    call: *const fn (*anyopaque, *jsc.JSGlobalObject) void,
+};
+
+threadlocal var source_loaded_hook: ?SourceLoadedHook = null;
+
 pub const Run = struct {
     ctx: Command.Context,
     vm: *VirtualMachine,
@@ -434,6 +441,8 @@ pub const Run = struct {
         // bzrt-cut: `hintSourcePagesDontNeed` no-op'd for standalone compiled
         // binaries only, and standalone executables are CUT — nothing to do.
 
+        if (source_loaded_hook) |hook| hook.call(hook.context, vm.global);
+
         {
             if (this.vm.isWatcherEnabled()) {
                 vm.reportExceptionInHotReloadedModuleIfNeeded();
@@ -573,6 +582,19 @@ pub fn runEntryFile(allocator: std.mem.Allocator, entry_path: [:0]const u8) !voi
 /// Run host-provided source bytes. The synthetic entry name selects Bun's
 /// existing eval-source module path; the engine never opens `filename`.
 pub fn runSource(allocator: std.mem.Allocator, source: []const u8, filename: []const u8) !void {
+    return runSourceWithHook(allocator, source, filename, null);
+}
+
+pub fn runSourceWithHook(
+    allocator: std.mem.Allocator,
+    source: []const u8,
+    filename: []const u8,
+    hook: ?SourceLoadedHook,
+) !void {
+    std.debug.assert(source_loaded_hook == null);
+    source_loaded_hook = hook;
+    defer source_loaded_hook = null;
+
     const trigger = bun.pathLiteral("/[eval]");
     const base_dir = std.fs.path.dirname(filename) orelse ".";
     const entry_path = try std.fmt.allocPrint(allocator, "{s}{s}", .{ base_dir, trigger });

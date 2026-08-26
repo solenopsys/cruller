@@ -1,81 +1,52 @@
 const std = @import("std");
 const contract = @import("./contract.zig");
+const direct = @import("./direct.zig");
 const QuickJsEngine = @import("./engine_selector.zig").Implementation(.quickjs);
 
-const Channel = struct {
-    items: [8]contract.Command = undefined,
-    read_index: usize = 0,
-    write_index: usize = 0,
+const Harness = struct {
+    to_host: direct.CommandChannel,
+    to_engine: direct.CommandChannel,
+    data: direct.DataPool,
+    implementation: QuickJsEngine,
 
-    fn transport(self: *Channel) contract.CommandTransport {
-        return .{ .context = self, .vtable = &vtable };
+    fn init(self: *Harness, allocator: std.mem.Allocator) !void {
+        self.to_host = direct.CommandChannel.init(allocator);
+        errdefer self.to_host.deinit();
+        self.to_engine = direct.CommandChannel.init(allocator);
+        errdefer self.to_engine.deinit();
+        self.data = direct.DataPool.init(allocator);
+        errdefer self.data.deinit();
+        try self.implementation.init(allocator, .{ .io = .{
+            .to_host = self.to_host.transport(),
+            .to_engine = self.to_engine.transport(),
+            .data = self.data.transport(),
+        } });
     }
-    fn send(context: ?*anyopaque, command: *const contract.Command) callconv(.c) bool {
-        const self: *Channel = @ptrCast(@alignCast(context.?));
-        if (self.write_index == self.items.len) return false;
-        self.items[self.write_index] = command.*;
-        self.write_index += 1;
-        return true;
-    }
-    fn receive(context: ?*anyopaque, out: *contract.Command) callconv(.c) bool {
-        const self: *Channel = @ptrCast(@alignCast(context.?));
-        if (self.read_index == self.write_index) return false;
-        out.* = self.items[self.read_index];
-        self.read_index += 1;
-        return true;
-    }
-    fn setWaker(_: ?*anyopaque, _: contract.CommandTransport.Waker) callconv(.c) void {}
-    const vtable: contract.CommandTransport.VTable = .{ .send = send, .receive = receive, .set_waker = setWaker };
-};
 
-const Data = struct {
-    source: []const u8,
-    name: []const u8,
+    fn deinit(self: *Harness) void {
+        self.implementation.engine().destroy();
+        self.data.deinit();
+        self.to_engine.deinit();
+        self.to_host.deinit();
+    }
 
-    fn transport(self: *Data) contract.DataTransport {
-        return .{ .context = self, .vtable = &vtable };
+    fn load(self: *Harness, source: []const u8) !void {
+        const source_ref = try self.data.copy(source);
+        defer self.data.transport().release(source_ref);
+        const name_ref = try self.data.copy("engine-test.js");
+        defer self.data.transport().release(name_ref);
+        try self.implementation.engine().load(source_ref, name_ref);
     }
-    fn allocate(_: ?*anyopaque, _: usize, _: *contract.BufferRef) callconv(.c) bool {
-        return false;
-    }
-    fn map(context: ?*anyopaque, ref: contract.BufferRef, out: *contract.MappedBuffer) callconv(.c) bool {
-        const self: *Data = @ptrCast(@alignCast(context.?));
-        const bytes = switch (ref.buffer_id) {
-            1 => self.source,
-            2 => self.name,
-            else => return false,
-        };
-        out.* = .{ .ptr = @constCast(bytes.ptr), .len = bytes.len };
-        return true;
-    }
-    fn retain(_: ?*anyopaque, _: contract.BufferRef) callconv(.c) bool {
-        return true;
-    }
-    fn release(_: ?*anyopaque, _: contract.BufferRef) callconv(.c) void {}
-    const vtable: contract.DataTransport.VTable = .{
-        .allocate = allocate,
-        .map = map,
-        .retain = retain,
-        .release = release,
-    };
 };
 
 fn runScript(source: []const u8) !void {
-    var to_host: Channel = .{};
-    var to_engine: Channel = .{};
-    var data: Data = .{ .source = source, .name = "engine-test.js" };
-    var implementation: QuickJsEngine = undefined;
-    try implementation.init(std.testing.allocator, .{ .io = .{
-        .to_host = to_host.transport(),
-        .to_engine = to_engine.transport(),
-        .data = data.transport(),
-    } });
-    const engine = implementation.engine();
-    defer engine.destroy();
-    try engine.load(.{ .buffer_id = 1, .length = @intCast(source.len) }, .{ .buffer_id = 2, .length = @intCast(data.name.len) });
-    try engine.run();
-    try std.testing.expectEqual(contract.Operation.engine_started, to_host.transport().receive().?.operationKind());
-    try std.testing.expectEqual(contract.Operation.engine_stopped, to_host.transport().receive().?.operationKind());
+    var harness: Harness = undefined;
+    try harness.init(std.testing.allocator);
+    defer harness.deinit();
+    try harness.load(source);
+    try harness.implementation.engine().run();
+    try std.testing.expectEqual(contract.Operation.engine_started, harness.to_host.transport().receive().?.operationKind());
+    try std.testing.expectEqual(contract.Operation.engine_stopped, harness.to_host.transport().receive().?.operationKind());
 }
 
 test "QuickJS executes source buffers through Engine" {
@@ -88,17 +59,57 @@ test "QuickJS executes source buffers through Engine" {
 }
 
 test "QuickJS reports script exceptions through Engine.run" {
-    var to_host: Channel = .{};
-    var to_engine: Channel = .{};
-    var data: Data = .{ .source = "throw new Error('expected')", .name = "failure.js" };
-    var implementation: QuickJsEngine = undefined;
-    try implementation.init(std.testing.allocator, .{ .io = .{
-        .to_host = to_host.transport(),
-        .to_engine = to_engine.transport(),
-        .data = data.transport(),
-    } });
-    const engine = implementation.engine();
-    defer engine.destroy();
-    try engine.load(.{ .buffer_id = 1, .length = @intCast(data.source.len) }, .{ .buffer_id = 2, .length = @intCast(data.name.len) });
-    try std.testing.expectError(error.EngineRunFailed, engine.run());
+    var harness: Harness = undefined;
+    try harness.init(std.testing.allocator);
+    defer harness.deinit();
+    try harness.load("throw new Error('expected')");
+    try std.testing.expectError(error.EngineRunFailed, harness.implementation.engine().run());
+}
+
+test "QuickJS handles bundled SSR requests through command and data streams" {
+    const source =
+        \\globalThis.__crullerHandle = function(input) {
+        \\  const request = JSON.parse(input);
+        \\  const title = request.path === "/about" ? "About" : "Home";
+        \\  return JSON.stringify({
+        \\    status: 200,
+        \\    headers: [["content-type", "text/html; charset=utf-8"]],
+        \\    body: "<!doctype html><h1>" + title + "</h1>"
+        \\  });
+        \\};
+    ;
+
+    var harness: Harness = undefined;
+    try harness.init(std.testing.allocator);
+    defer harness.deinit();
+    try harness.load(source);
+
+    const requests = [_][]const u8{
+        "{\"method\":\"GET\",\"path\":\"/\",\"headers\":[],\"body\":\"\"}",
+        "{\"method\":\"GET\",\"path\":\"/about\",\"headers\":[],\"body\":\"\"}",
+    };
+    for (requests, 1..) |request, request_id| {
+        var command = contract.Command.init(.event, .server_request);
+        command.request_id = request_id;
+        command.payload = try harness.data.copy(request);
+        try harness.to_engine.transport().send(command);
+    }
+    try harness.to_engine.transport().send(contract.Command.init(.shutdown, .none));
+
+    try harness.implementation.engine().run();
+    try std.testing.expectEqual(contract.Operation.engine_started, harness.to_host.transport().receive().?.operationKind());
+
+    const expected = [_][]const u8{
+        "{\"status\":200,\"headers\":[[\"content-type\",\"text/html; charset=utf-8\"]],\"body\":\"<!doctype html><h1>Home</h1>\"}",
+        "{\"status\":200,\"headers\":[[\"content-type\",\"text/html; charset=utf-8\"]],\"body\":\"<!doctype html><h1>About</h1>\"}",
+    };
+    for (expected, 1..) |expected_response, request_id| {
+        const response = harness.to_host.transport().receive().?;
+        try std.testing.expectEqual(contract.Operation.server_response_end, response.operationKind());
+        try std.testing.expectEqual(@as(u64, request_id), response.request_id);
+        try std.testing.expectEqual(@as(i32, 0), response.status);
+        try std.testing.expectEqualStrings(expected_response, (try harness.data.transport().map(response.payload)).slice());
+        harness.data.transport().release(response.payload);
+    }
+    try std.testing.expectEqual(contract.Operation.engine_stopped, harness.to_host.transport().receive().?.operationKind());
 }

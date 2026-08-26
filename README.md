@@ -141,24 +141,30 @@ the VM side can be built as an I/O-free dynamic library.
 | Engine lifecycle (`load/run/poll/interrupt/destroy`) | Implemented | Implemented | Complete |
 | Outbound `fetch` | Routed through host commands | No JS binding | Partial; compatibility work remains |
 | Host-owned file operations | Command adapter exists | No JS binding | Partial; executor is not io_uring |
-| Incoming HTTP and SSR | Existing Bun/JSC path | Unavailable | Not migrated |
+| Bundled synchronous SSR handler | Command/data dispatcher | Command/data dispatcher | Initial vertical slice implemented |
+| Incoming network HTTP server | Existing Bun/JSC path | Unavailable | Host listener adapter not migrated |
 | Module loading | Existing JSC resolver still participates | Unavailable | Not migrated |
 | WebSockets, file-backed Blob, and Valkey | Existing direct bindings | Unavailable | Not migrated |
 | Transport implementation | Mutex queues and heap data pool | Same | Rings/shared buffers not implemented |
 | Physical engine library | Monolithic link | Monolithic test link | Not implemented |
 
-The QuickJS adapter is intentionally limited to pure JavaScript at this stage.
-Its wrapper currently configures a 16 MiB JavaScript heap limit and a 512 KiB
-stack limit. These are engine limits, not process memory measurements; total RSS
-has not been measured, so a 5 MiB SSR process is not a current claim.
+QuickJS can now run a synchronous bundled SSR handler exposed as
+`globalThis.__crullerHandle`. Requests and responses are UTF-8 JSON envelopes
+carried as `BufferRef` payloads on `server_request` and `server_response_end`
+commands. The same dispatcher and JavaScript convention are wired to JSC. This
+first slice is suitable for synchronous rendering such as `renderToString`; it
+does not yet support Promise results, streaming responses, host HTTP listeners,
+or QuickJS webcore compatibility globals.
+
+The QuickJS wrapper currently configures a 16 MiB JavaScript heap limit and a
+512 KiB stack limit. These are engine limits, not process memory measurements;
+total RSS has not been measured, so a 5 MiB SSR process is not a current claim.
 
 ### Next tasks
 
-1. Define the smallest engine-neutral invocation contract: identify a loaded
-   handler, provide request metadata and body as buffer references, run it, and
-   return response status, headers, and body through commands and data buffers.
-   No JSC/QuickJS values, callbacks, file descriptors, paths, or pointers may
-   cross this contract.
+1. Replace the initial JSON body representation with a binary-safe request and
+   response envelope while retaining the existing command and `BufferRef`
+   ownership rules. Add Promise completion and streamed response commands.
 2. Implement the incoming HTTP host adapter. The host owns listeners,
    connections, protocol parsing, request bodies, response writes, TLS, and
    cancellation. The VM receives only an invocation and referenced bytes.

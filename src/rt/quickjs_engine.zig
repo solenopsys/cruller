@@ -2,6 +2,7 @@ const std = @import("std");
 const contract = @import("./contract.zig");
 const qjs = @import("./qjs_api.zig");
 const vm_bridge = @import("./vm_bridge.zig");
+const server_dispatch = @import("./server_dispatch.zig");
 
 /// QuickJS implementation of the same source-buffer Engine contract as JSC.
 /// It deliberately exposes no filesystem or network API to JavaScript.
@@ -68,13 +69,51 @@ pub const QuickJsEngine = struct {
         );
         defer qjs.qjs_free(output_ptr, output_len);
         if (rc != 0) return if (rc > 0) 3 else 4;
+
+        if (qjs.qjs_rt_has_fn(self.runtime, server_dispatch.handler_name.ptr, server_dispatch.handler_name.len) == 1) {
+            while (true) {
+                const result = self.pumpServer(std.math.maxInt(u32));
+                if (result.stopped) break;
+                if (result.processed == 0) idleWait();
+            }
+        }
         self.config.io.to_host.send(contract.Command.init(.event, .engine_stopped)) catch return 5;
         return 0;
     }
 
     fn poll(context: ?*anyopaque, limit: u32) callconv(.c) u32 {
         const self: *QuickJsEngine = @ptrCast(@alignCast(context.?));
-        return self.bridge.poll(limit);
+        return self.pumpServer(limit).processed;
+    }
+
+    fn pumpServer(self: *QuickJsEngine, limit: u32) server_dispatch.PumpResult {
+        return server_dispatch.pump(self.allocator, self.config.io, &self.bridge, .{
+            .context = self,
+            .call = callHandler,
+        }, limit);
+    }
+
+    fn callHandler(context: *anyopaque, input: []const u8, allocator: std.mem.Allocator) anyerror![]u8 {
+        const self: *QuickJsEngine = @ptrCast(@alignCast(context));
+        var output_ptr: ?[*]u8 = null;
+        var output_len: usize = 0;
+        const rc = qjs.qjs_rt_call(
+            self.runtime,
+            server_dispatch.handler_name.ptr,
+            server_dispatch.handler_name.len,
+            input.ptr,
+            input.len,
+            &output_ptr,
+            &output_len,
+        );
+        defer qjs.qjs_free(output_ptr, output_len);
+        if (rc != 0) return error.HandlerFailed;
+        return allocator.dupe(u8, if (output_ptr) |ptr| ptr[0..output_len] else &.{});
+    }
+
+    fn idleWait() void {
+        var duration: std.c.timespec = .{ .sec = 0, .nsec = 100_000 };
+        _ = std.c.nanosleep(&duration, null);
     }
 
     fn interrupt(context: ?*anyopaque) callconv(.c) void {

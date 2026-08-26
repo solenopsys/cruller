@@ -59,14 +59,18 @@ pub const Bridge = struct {
         while (count < limit) {
             const command = self.io.to_engine.receive() orelse break;
             count += 1;
-            if (self.handlers.get(command.request_id)) |handler| {
-                if (handler.on_message(handler.context, command))
-                    _ = self.handlers.remove(command.request_id);
-            } else if (!command.payload.isEmpty()) {
-                self.io.data.release(command.payload);
-            }
+            self.dispatch(command);
         }
         return count;
+    }
+
+    pub fn dispatch(self: *Bridge, command: contract.Command) void {
+        if (self.handlers.get(command.request_id)) |handler| {
+            if (handler.on_message(handler.context, command))
+                _ = self.handlers.remove(command.request_id);
+        } else if (!command.payload.isEmpty()) {
+            self.io.data.release(command.payload);
+        }
     }
 };
 

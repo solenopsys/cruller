@@ -1847,6 +1847,7 @@ pub const rt = struct {
     pub const direct = @import("./rt/direct.zig");
     pub const direct_host = @import("./rt/direct_host.zig");
     pub const vm_bridge = @import("./rt/vm_bridge.zig");
+    pub const server_dispatch = @import("./rt/server_dispatch.zig");
     pub const http_wire = @import("./rt/http_wire.zig");
     pub const host_http = @import("./rt/host_http.zig");
     pub const jsc_engine = @import("./rt/jsc_engine.zig");

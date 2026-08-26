@@ -570,6 +570,36 @@ pub fn runEntryFile(allocator: std.mem.Allocator, entry_path: [:0]const u8) !voi
     try Run.boot(ctx, absolute_entry_path, null);
 }
 
+/// Run host-provided source bytes. The synthetic entry name selects Bun's
+/// existing eval-source module path; the engine never opens `filename`.
+pub fn runSource(allocator: std.mem.Allocator, source: []const u8, filename: []const u8) !void {
+    const trigger = bun.pathLiteral("/[eval]");
+    const base_dir = std.fs.path.dirname(filename) orelse ".";
+    const entry_path = try std.fmt.allocPrint(allocator, "{s}{s}", .{ base_dir, trigger });
+
+    const log = try allocator.create(logger.Log);
+    log.* = logger.Log.init(allocator);
+    const ctx = try allocator.create(Command.ContextData);
+    ctx.* = .{
+        .start_time = bun.start_time,
+        .allocator = allocator,
+        .log = log,
+        .args = .{
+            .entry_points = &.{entry_path},
+            .inject = &.{},
+            .external = &.{},
+            .main_fields = &.{},
+            .env_files = &.{},
+            .extension_order = &.{},
+            .conditions = &.{},
+            .ignore_dce_annotations = false,
+            .bunfig_path = "",
+        },
+        .runtime_options = .{ .eval = .{ .script = source } },
+    };
+    try Run.boot(ctx, entry_path, null);
+}
+
 pub export fn Bun__onResolveEntryPointResult(global: *jsc.JSGlobalObject, callframe: *jsc.CallFrame) callconv(jsc.conv) noreturn {
     const arguments = callframe.arguments_old(1).slice();
     const result = arguments[0];

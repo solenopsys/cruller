@@ -444,6 +444,7 @@ pub fn tickPossiblyForever(this: *EventLoop) void {
     this.processGCTimer();
     loop.tick();
 
+    _ = rt_vm_bridge.pollCurrent(256);
     ctx.onAfterEventLoop();
     this.tickConcurrent();
     this.tick();
@@ -489,6 +490,7 @@ pub fn autoTickActive(this: *EventLoop) void {
         ctx.timer.drainTimers(ctx);
     }
 
+    _ = rt_vm_bridge.pollCurrent(256);
     ctx.onAfterEventLoop();
 }
 
@@ -498,6 +500,8 @@ pub fn processGCTimer(this: *EventLoop) void {
 
 pub fn tick(this: *EventLoop) void {
     jsc.markBinding(@src());
+    rt_vm_bridge.setCurrentWaker(.{ .context = this, .wake = wakeForRuntimeHost });
+    _ = rt_vm_bridge.pollCurrent(256);
     var scope: jsc.TopExceptionScope = undefined;
     scope.init(this.global, @src());
     defer scope.deinit();
@@ -715,6 +719,12 @@ pub const ConcurrentCppTask = @import("./CppTask.zig").ConcurrentCppTask;
 pub const JSCScheduler = @import("./JSCScheduler.zig");
 pub const Task = @import("./Task.zig").Task;
 pub const ConcurrentTask = @import("../event_loop/ConcurrentTask.zig");
+const rt_vm_bridge = @import("../rt/vm_bridge.zig");
+
+fn wakeForRuntimeHost(context: ?*anyopaque) callconv(.c) void {
+    const loop: *EventLoop = @ptrCast(@alignCast(context.?));
+    loop.wakeup();
+}
 pub const GarbageCollectionController = @import("./GarbageCollectionController.zig");
 pub const DeferredTaskQueue = @import("../event_loop/DeferredTaskQueue.zig");
 pub const DeferredRepeatingTask = DeferredTaskQueue.DeferredRepeatingTask;

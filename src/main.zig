@@ -82,7 +82,15 @@ pub fn main(init: std.process.Init.Minimal) void {
             }
             break :blk _bun.argv[1];
         };
-        _bun.bun_js.runEntryFile(_bun.default_allocator, entry_path) catch |err| {
+        var runtime: Runtime = undefined;
+        runtime.init(_bun.default_allocator) catch |err| {
+            Output.panic("Failed to initialize runtime boundary: {s}\n", .{@errorName(err)});
+        };
+        defer runtime.deinit();
+        runtime.loadEntryPath(entry_path) catch |err| {
+            Output.panic("Failed to load runtime entrypoint: {s}\n", .{@errorName(err)});
+        };
+        runtime.run() catch |err| {
             Output.panic("Failed to run entry file: {s}\n", .{@errorName(err)});
         };
     } else {
@@ -122,5 +130,6 @@ const builtin = @import("builtin");
 const std = @import("std");
 
 const _bun = @import("bun");
+const Runtime = _bun.rt.monolith.Runtime;
 const Environment = _bun.Environment;
 const Output = _bun.Output;

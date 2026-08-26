@@ -6,6 +6,43 @@ const std = @import("std");
 
 const ObjectFormat = enum { obj, bc };
 
+const qjs_wrapper_dir = "../qjs";
+
+fn qjsTargetTriple(b: *std.Build, target: std.Build.ResolvedTarget) []const u8 {
+    const arch = switch (target.result.cpu.arch) {
+        .x86_64 => "x86_64",
+        .aarch64 => "aarch64",
+        else => std.debug.panic("unsupported cpu arch for qjs: {s}", .{@tagName(target.result.cpu.arch)}),
+    };
+    const libc = switch (target.result.abi) {
+        .gnu, .gnueabi, .gnueabihf => "gnu",
+        .musl, .musleabi, .musleabihf => "musl",
+        else => std.debug.panic("unsupported abi for qjs: {s}", .{@tagName(target.result.abi)}),
+    };
+    return b.fmt("{s}-linux-{s}", .{ arch, libc });
+}
+
+fn linkQjsForTest(b: *std.Build, compile: *std.Build.Step.Compile, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) []const u8 {
+    const target_dir = b.fmt("{s}-{s}", .{ @tagName(target.result.cpu.arch), @tagName(target.result.abi) });
+    const install_dir = b.fmt("../cruller/.zig-cache/qjs/{s}", .{target_dir});
+    const lib_dir = b.fmt(".zig-cache/qjs/{s}/lib", .{target_dir});
+    const wrapper = b.addSystemCommand(&.{
+        b.graph.zig_exe,
+        "build",
+        b.fmt("-Dtarget={s}", .{qjsTargetTriple(b, target)}),
+        b.fmt("-Doptimize={s}", .{@tagName(optimize)}),
+        "--prefix",
+        install_dir,
+    });
+    wrapper.setCwd(b.path(qjs_wrapper_dir));
+    wrapper.setName("build QuickJS wrapper");
+    compile.step.dependOn(&wrapper.step);
+    compile.root_module.addLibraryPath(.{ .cwd_relative = lib_dir });
+    compile.root_module.linkSystemLibrary("qjs", .{});
+    compile.root_module.link_libc = true;
+    return lib_dir;
+}
+
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.option(std.builtin.OptimizeMode, "optimize", "Prioritize performance, safety, or binary size") orelse .ReleaseFast;
@@ -171,4 +208,32 @@ pub fn build(b: *std.Build) void {
     });
     const check_step = b.step("check", "Семантический анализ урезанного дерева");
     check_step.dependOn(&check_obj.step);
+
+    const rt_test_root = b.createModule(.{
+        .root_source_file = b.path("src/rt/tests.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    const rt_tests = b.addTest(.{
+        .name = "rt-boundary-tests",
+        .root_module = rt_test_root,
+    });
+    const run_rt_tests = b.addRunArtifact(rt_tests);
+
+    const qjs_tests = b.addTest(.{
+        .name = "rt-quickjs-engine-tests",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/rt/quickjs_engine_tests.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        }),
+    });
+    const qjs_lib_dir = linkQjsForTest(b, qjs_tests, target, optimize);
+    const run_qjs_tests = b.addRunArtifact(qjs_tests);
+    run_qjs_tests.setEnvironmentVariable("LD_LIBRARY_PATH", b.pathFromRoot(qjs_lib_dir));
+    const rt_test_step = b.step("rt-test", "Проверить прямые транспорты runtime boundary");
+    rt_test_step.dependOn(&run_rt_tests.step);
+    rt_test_step.dependOn(&run_qjs_tests.step);
 }

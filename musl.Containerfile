@@ -1,4 +1,4 @@
-FROM oven/bun:1.3.14-alpine AS build
+FROM oven/bun:1.4-alpine AS build
 
 # Build natively against musl. Alpine edge supplies the LLVM 21 toolchain
 # expected by this checkout; the final runtime remains on stable Alpine.

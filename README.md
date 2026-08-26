@@ -38,21 +38,29 @@ networking, resource control, and embeddability.
 
 ## Roadmap
 
-1. Separate the WebKit runtime into an RT library and define a common Zig
-   interface for runtime implementations.
-2. Add V8 as an RT implementation behind that interface.
-3. Add QuickJS as an RT implementation behind that interface.
-4. Build a test suite for performance measurement and memory-leak detection.
-5. Expand the networking interfaces and eliminate memory leaks in every RT
-   implementation.
+1. Complete one incoming HTTP/SSR vertical slice through the engine-neutral
+   command/data boundary for both JSC and QuickJS.
+2. Move the remaining native services behind host commands, starting with
+   module loading and then WebSockets, file-backed Blob operations, and Valkey.
+3. Replace the direct in-process transports with bounded command rings and
+   shared or io_uring-registered data buffers.
+4. Build the I/O-free engine side as a dynamic RT library only after direct I/O
+   dependencies have been removed and guarded in CI.
+5. Add V8 only if the completed interface can be implemented without copying
+   host functionality into the engine adapter.
+6. Measure per-runtime RSS, throughput, tail latency, and leaks on identical
+   workloads.
 
 These are roadmap items, not claims of currently shipped functionality.
 
 ## Status
 
-Cruller is in production. The `ReleaseFast` runtime embeds its generated
-JavaScript assets and is ready to execute and serve prepared application
-artifacts.
+The existing JSC `ReleaseFast` monolith is in production and can execute and
+serve prepared application artifacts. The new engine-neutral boundary is an
+active migration inside that monolith. QuickJS proves that the minimal engine
+interface can execute source buffers, but it is not yet an SSR/server runtime.
+Engine selection is currently a compile-time choice, not a command-line or
+runtime parameter.
 
 ## Measurements
 
@@ -91,6 +99,97 @@ expected; HTTP throughput and tail latency require separate benchmarks.
 - JavaScriptCore bindings (`jsc/`)
 - Foundation: `sys`, `collections`, `bun_core`, `string`, `unicode`, `io`, `bun_alloc`, `ptr`, `threading`,
   `crash_handler`, `errno`, `logger`, `router`, `watcher`, `boringssl_sys` (TLS)
+
+## Runtime Boundary: Phase One
+
+The production executable is still a monolith, but its entrypoint now crosses
+a transport-neutral runtime boundary under `src/rt`:
+
+- `CommandTransport` carries fixed-size lifecycle and control messages.
+- `DataTransport` owns bulk bytes and exposes only generation-checked
+  `BufferRef` descriptors to commands and engines.
+- `Engine` exposes only load, run, poll, interrupt, and destroy operations. Load
+  receives source and diagnostic-name buffers, never a path; JSC, QuickJS, or
+  any future engine cannot open the entrypoint itself. JSC types do not cross
+  this interface.
+- The current direct adapters use in-process queues and heap buffers. Replacing
+  them with command rings and shared or io_uring-registered buffers does not
+  change the engine contract.
+- Outbound `fetch` requests, including streamed request and response bodies,
+  cross the same command/data boundary. `AsyncHTTP`, sockets, TLS, and the HTTP
+  thread are owned by the host adapter.
+- The host adapter also implements opaque file-resource open/read/write/close
+  commands; descriptors never cross into the VM.
+- `QuickJsEngine` is a second implementation of the same `Engine` vtable. It
+  uses the sibling quickjs-ng wrapper and is exercised against multiple source
+  buffers by `zig build rt-test`. `engine_selector.Implementation(.jsc)` and
+  `.quickjs` are the compile-time switch; QuickJS currently exposes only pure
+  JavaScript.
+
+This is an interface boundary inside the production monolith, not yet a
+physical `libcruller.so` boundary. Module loading, file-backed Blob operations,
+`Bun.serve`, WebSockets, Valkey, and other retained native bindings have not yet
+been connected to the host commands. The direct transport is not a ring and the
+file executor is not io_uring-backed yet. Those migrations are required before
+the VM side can be built as an I/O-free dynamic library.
+
+### Current boundary state
+
+| Capability | JSC | QuickJS | Boundary state |
+| --- | --- | --- | --- |
+| Load and execute a source buffer | Implemented | Implemented | Complete |
+| Engine lifecycle (`load/run/poll/interrupt/destroy`) | Implemented | Implemented | Complete |
+| Outbound `fetch` | Routed through host commands | No JS binding | Partial; compatibility work remains |
+| Host-owned file operations | Command adapter exists | No JS binding | Partial; executor is not io_uring |
+| Incoming HTTP and SSR | Existing Bun/JSC path | Unavailable | Not migrated |
+| Module loading | Existing JSC resolver still participates | Unavailable | Not migrated |
+| WebSockets, file-backed Blob, and Valkey | Existing direct bindings | Unavailable | Not migrated |
+| Transport implementation | Mutex queues and heap data pool | Same | Rings/shared buffers not implemented |
+| Physical engine library | Monolithic link | Monolithic test link | Not implemented |
+
+The QuickJS adapter is intentionally limited to pure JavaScript at this stage.
+Its wrapper currently configures a 16 MiB JavaScript heap limit and a 512 KiB
+stack limit. These are engine limits, not process memory measurements; total RSS
+has not been measured, so a 5 MiB SSR process is not a current claim.
+
+### Next tasks
+
+1. Define the smallest engine-neutral invocation contract: identify a loaded
+   handler, provide request metadata and body as buffer references, run it, and
+   return response status, headers, and body through commands and data buffers.
+   No JSC/QuickJS values, callbacks, file descriptors, paths, or pointers may
+   cross this contract.
+2. Implement the incoming HTTP host adapter. The host owns listeners,
+   connections, protocol parsing, request bodies, response writes, TLS, and
+   cancellation. The VM receives only an invocation and referenced bytes.
+3. Add the asynchronous host-command bridge to QuickJS using the same command
+   and completion protocol as JSC. Do not introduce a separate synchronous
+   QuickJS host API that would bypass the boundary.
+4. Run a self-contained bundled SSR handler as one source buffer. Module
+   filesystem access is deliberately excluded from this first slice. Execute
+   identical request vectors first on JSC and then on QuickJS and compare
+   status, headers, body, errors, and cancellation behavior.
+5. Move module resolution behind host-provided buffers. Start with a complete
+   pre-built bundle; add module-graph requests only when a production workload
+   requires them.
+6. Finish outbound fetch compatibility, including proxy headers, TLS and
+   certificate-validation options, sendfile behavior, and stable error mapping.
+7. Move WebSockets, file-backed Blob operations, Valkey, and every remaining I/O
+   call site to host commands.
+8. Replace the direct adapters with bounded SPSC command rings and shared or
+   io_uring-registered buffers. The existing `Engine`, command, and `BufferRef`
+   contracts must remain unchanged.
+9. Add a build/CI check that rejects direct filesystem, socket, DNS, TLS, and
+   process I/O dependencies from the engine target, then produce the dynamic
+   library.
+10. Benchmark memory and performance only after the same SSR workload runs on
+    both engines. Report total RSS, engine heap, startup time, request latency,
+    throughput, and leak behavior separately.
+
+The next milestone is accepted only when one bundled SSR script handles the
+same in-memory HTTP requests under JSC and QuickJS using the common invocation
+and command/data interfaces, with no direct file or network access from either
+engine adapter.
 
 
 ## Proposed Cruller Runtime Architecture

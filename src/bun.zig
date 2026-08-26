@@ -1841,6 +1841,19 @@ pub const Loader = @import("./bundler/options.zig").Loader; // bzrt: bundle_v2 Ð
 
 pub const threading = @import("./threading/threading.zig");
 pub const Mutex = threading.Mutex;
+
+pub const rt = struct {
+    pub const contract = @import("./rt/contract.zig");
+    pub const direct = @import("./rt/direct.zig");
+    pub const direct_host = @import("./rt/direct_host.zig");
+    pub const vm_bridge = @import("./rt/vm_bridge.zig");
+    pub const http_wire = @import("./rt/http_wire.zig");
+    pub const host_http = @import("./rt/host_http.zig");
+    pub const jsc_engine = @import("./rt/jsc_engine.zig");
+    pub const quickjs_engine = @import("./rt/quickjs_engine.zig");
+    pub const engine_selector = @import("./rt/engine_selector.zig");
+    pub const monolith = @import("./rt/monolith.zig");
+};
 pub const Futex = threading.Futex;
 pub const ThreadPool = threading.ThreadPool;
 pub const UnboundedQueue = threading.UnboundedQueue;

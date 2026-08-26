@@ -3,13 +3,13 @@ pub const FetchTasklet = struct {
 
     const log = Output.scoped(.FetchTasklet, .visible);
     sink: ?*ResumableSink = null,
-    http: ?*http.AsyncHTTP = null,
+    host_request_payload: ?[]u8 = null,
+    host_request_id: u64 = 0,
     result: http.HTTPClientResult = .{},
     metadata: ?http.HTTPResponseMetadata = null,
     javascript_vm: *VirtualMachine = undefined,
     global_this: *JSGlobalObject = undefined,
     request_body: HTTPRequestBody = undefined,
-    request_body_streaming_buffer: ?*http.ThreadSafeStreamBuffer = null,
 
     /// buffer being used by AsyncHTTP
     response_buffer: MutableString = undefined,
@@ -189,11 +189,6 @@ pub const FetchTasklet = struct {
             this.sink = null;
             sink.deref();
         }
-        if (this.request_body_streaming_buffer) |buffer| {
-            this.request_body_streaming_buffer = null;
-            buffer.clearDrainCallback();
-            buffer.deref();
-        }
     }
 
     fn clearData(this: *FetchTasklet) void {
@@ -218,8 +213,9 @@ pub const FetchTasklet = struct {
         this.request_headers.buf.deinit(allocator);
         this.request_headers = Headers{ .allocator = undefined };
 
-        if (this.http) |http_| {
-            http_.clearData();
+        if (this.host_request_payload) |payload| {
+            allocator.free(payload);
+            this.host_request_payload = null;
         }
 
         if (this.metadata != null) {
@@ -260,13 +256,7 @@ pub const FetchTasklet = struct {
 
         this.clearData();
 
-        const allocator = bun.default_allocator;
-
-        if (this.http) |http_| {
-            this.http = null;
-            allocator.destroy(http_);
-        }
-        allocator.destroy(this);
+        bun.default_allocator.destroy(this);
     }
 
     fn getCurrentResponse(this: *FetchTasklet) ?*Response {
@@ -656,7 +646,7 @@ pub const FetchTasklet = struct {
                         this.signal_store.aborted.store(true, .monotonic);
                         this.tracker.didCancel(this.global_this);
                         // we need to abort the request
-                        if (this.http) |http_| http.http_thread.scheduleShutdown(http_);
+                        this.cancelHostRequest();
                         this.result.fail = error.ERR_TLS_CERT_ALTNAME_INVALID;
                         return false;
                     };
@@ -673,7 +663,7 @@ pub const FetchTasklet = struct {
                         this.abort_reason.set(globalObject, hostname_err_result);
                         this.signal_store.aborted.store(true, .monotonic);
                         this.tracker.didCancel(this.global_this);
-                        if (this.http) |http_| http.http_thread.scheduleShutdown(http_);
+                        this.cancelHostRequest();
                         this.result.fail = error.ERR_TLS_CERT_ALTNAME_INVALID;
                         return false;
                     };
@@ -690,9 +680,7 @@ pub const FetchTasklet = struct {
                         this.tracker.didCancel(this.global_this);
 
                         // we need to abort the request
-                        if (this.http) |http_| {
-                            http.http_thread.scheduleShutdown(http_);
-                        }
+                        this.cancelHostRequest();
                         this.result.fail = error.ERR_TLS_CERT_ALTNAME_INVALID;
                         return false;
                     }
@@ -759,11 +747,8 @@ pub const FetchTasklet = struct {
             else => {},
         }
 
-        // some times we don't have metadata so we also check http.url
         const path = if (this.metadata) |metadata|
             bun.String.cloneUTF8(metadata.url)
-        else if (this.http) |http_|
-            bun.String.cloneUTF8(http_.url.href)
         else
             bun.String.empty;
 
@@ -868,16 +853,6 @@ pub const FetchTasklet = struct {
             return jsc.WebCore.DrainResult{
                 .aborted = {},
             };
-        }
-
-        if (this.http) |http_| {
-            http_.enableResponseBodyStreaming();
-
-            // If the server sent the headers and the response body in two separate socket writes
-            // and if the server doesn't close the connection by itself
-            // and doesn't send any follow-up data
-            // then we must make sure the HTTP thread flushes.
-            bun.http.http_thread.scheduleResponseBodyDrain(http_.async_http_id);
         }
 
         this.mutex.lock();
@@ -993,11 +968,6 @@ pub const FetchTasklet = struct {
 
     fn ignoreRemainingResponseBody(this: *FetchTasklet) void {
         log("ignoreRemainingResponseBody", .{});
-        // enabling streaming will make the http thread to drain into the main thread (aka stop buffering)
-        // without a stream ref, response body or response instance alive it will just ignore the result
-        if (this.http) |http_| {
-            http_.enableResponseBodyStreaming();
-        }
         // we should not keep the process alive if we are ignoring the body
         const vm = this.javascript_vm;
         this.poll_ref.unref(vm);
@@ -1082,7 +1052,6 @@ pub const FetchTasklet = struct {
                     .capacity = 0,
                 },
             },
-            .http = try allocator.create(http.AsyncHTTP),
             .javascript_vm = jsc_vm,
             .request_body = fetch_options.body,
             .global_this = globalThis,
@@ -1096,6 +1065,7 @@ pub const FetchTasklet = struct {
             .reject_unauthorized = fetch_options.reject_unauthorized,
             .upgraded_connection = fetch_options.upgraded_connection,
         };
+        errdefer fetch_tasklet.deref();
 
         fetch_tasklet.signals = fetch_tasklet.signal_store.to();
 
@@ -1144,67 +1114,39 @@ pub const FetchTasklet = struct {
             fetch_tasklet.signals.cert_errors = null;
         }
 
-        // This task gets queued on the HTTP thread.
-        fetch_tasklet.http.?.* = http.AsyncHTTP.init(
-            bun.default_allocator,
-            fetch_options.method,
-            url,
-            fetch_options.headers.entries,
-            fetch_options.headers.buf.items,
-            &fetch_tasklet.response_buffer,
-            fetch_tasklet.request_body.slice(),
-            http.HTTPClientResult.Callback.New(
-                *FetchTasklet,
-                // handles response events (on headers, on body, etc.)
-                FetchTasklet.callback,
-            ).init(fetch_tasklet),
-            fetch_options.redirect_type,
-            .{
-                .http_proxy = proxy,
-                .proxy_headers = fetch_options.proxy_headers,
-                .hostname = fetch_options.hostname,
-                .signals = fetch_tasklet.signals,
-                .unix_socket_path = fetch_options.unix_socket_path,
-                .disable_timeout = fetch_options.disable_timeout,
-                .disable_keepalive = fetch_options.disable_keepalive,
-                .disable_decompression = fetch_options.disable_decompression,
-                .reject_unauthorized = fetch_options.reject_unauthorized,
-                .verbose = fetch_options.verbose,
-                .tls_props = fetch_options.ssl_config,
-            },
-        );
-        // enable streaming the write side
-        const isStream = fetch_tasklet.request_body == .ReadableStream;
-        fetch_tasklet.http.?.client.flags.is_streaming_request_body = isStream;
-        fetch_tasklet.http.?.client.flags.force_http2 = fetch_options.force_http2;
-        fetch_tasklet.http.?.client.flags.force_http3 = fetch_options.force_http3;
-        fetch_tasklet.http.?.client.flags.force_http1 = fetch_options.force_http1;
-        fetch_tasklet.is_waiting_request_stream_start = isStream;
-        if (isStream) {
-            const buffer = http.ThreadSafeStreamBuffer.new(.{});
-            buffer.setDrainCallback(FetchTasklet, FetchTasklet.onWriteRequestDataDrain, fetch_tasklet);
-            fetch_tasklet.request_body_streaming_buffer = buffer;
-            fetch_tasklet.http.?.request_body = .{
-                .stream = .{
-                    .buffer = buffer,
-                    .ended = false,
-                },
+        const entries = fetch_options.headers.entries.slice();
+        const names = entries.items(.name);
+        const values = entries.items(.value);
+        const wire_headers = try allocator.alloc(bun.rt.http_wire.Header, entries.len);
+        defer allocator.free(wire_headers);
+        for (wire_headers, 0..) |*header, index| {
+            header.* = .{
+                .name = fetch_options.headers.asStr(names[index]),
+                .value = fetch_options.headers.asStr(values[index]),
             };
         }
-        // TODO is this necessary? the http client already sets the redirect type,
-        // so manually setting it here seems redundant
-        if (fetch_options.redirect_type != FetchRedirect.follow) {
-            fetch_tasklet.http.?.client.remaining_redirect_count = 0;
-        }
-
-        // we want to return after headers are received
-        fetch_tasklet.signal_store.header_progress.store(true, .monotonic);
-
-        if (fetch_tasklet.request_body == .Sendfile) {
-            bun.assert(url.isHTTP());
-            bun.assert(fetch_options.proxy == null);
-            fetch_tasklet.http.?.request_body = .{ .sendfile = fetch_tasklet.request_body.Sendfile };
-        }
+        const wire_flags: bun.rt.http_wire.RequestFlags = .{
+            .disable_timeout = fetch_options.disable_timeout,
+            .disable_keepalive = fetch_options.disable_keepalive,
+            .disable_decompression = fetch_options.disable_decompression,
+            .reject_unauthorized = fetch_options.reject_unauthorized,
+            .force_http1 = fetch_options.force_http1,
+            .force_http2 = fetch_options.force_http2,
+            .force_http3 = fetch_options.force_http3,
+            .streaming_body = fetch_tasklet.request_body == .ReadableStream,
+        };
+        fetch_tasklet.is_waiting_request_stream_start = fetch_tasklet.request_body == .ReadableStream;
+        fetch_tasklet.host_request_payload = bun.rt.http_wire.encodeRequest(allocator, .{
+            .method = @intFromEnum(fetch_options.method),
+            .redirect = @intFromEnum(fetch_options.redirect_type),
+            .flags = @bitCast(wire_flags),
+            .url = url.href,
+            .proxy = if (proxy) |value| value.href else "",
+            .hostname = fetch_options.hostname orelse "",
+            .unix_socket = fetch_options.unix_socket_path.slice(),
+            .headers = wire_headers,
+            .body = fetch_tasklet.request_body.slice(),
+        }) catch return error.OutOfMemory;
 
         if (fetch_tasklet.signal) |signal| {
             signal.pendingActivityRef();
@@ -1234,31 +1176,6 @@ pub const FetchTasklet = struct {
         }
     }
 
-    /// This is ALWAYS called from the http thread and we cannot touch the buffer here because is locked
-    pub fn onWriteRequestDataDrain(this: *FetchTasklet) void {
-        if (this.javascript_vm.isShuttingDown()) return;
-        // ref until the main thread callback is called
-        this.ref();
-        this.javascript_vm.eventLoop().enqueueTaskConcurrent(jsc.ConcurrentTask.fromCallback(this, FetchTasklet.resumeRequestDataStream));
-    }
-
-    /// This is ALWAYS called from the main thread
-    // XXX: 'fn (*FetchTasklet) error{}!void' coerces to 'fn (*FetchTasklet) bun.JSError!void' but 'fn (*FetchTasklet) void' does not
-    pub fn resumeRequestDataStream(this: *FetchTasklet) error{}!void {
-        // deref when done because we ref inside onWriteRequestDataDrain
-        defer this.deref();
-        log("resumeRequestDataStream", .{});
-        if (this.sink) |sink| {
-            if (this.signal) |signal| {
-                if (signal.aborted()) {
-                    // already aborted; nothing to drain
-                    return;
-                }
-            }
-            sink.drain();
-        }
-    }
-
     /// Whether the request body should skip chunked transfer encoding framing.
     /// True for upgraded connections (e.g. WebSocket) or when the user explicitly
     /// set Content-Length without setting Transfer-Encoding.
@@ -1275,40 +1192,18 @@ pub const FetchTasklet = struct {
                 return .done;
             }
         }
-        const thread_safe_stream_buffer = this.request_body_streaming_buffer orelse return .done;
-        const stream_buffer = thread_safe_stream_buffer.acquire();
-        defer thread_safe_stream_buffer.release();
-        const highWaterMark = if (this.sink) |sink| sink.highWaterMark else 16384;
-
-        var needs_schedule = false;
-        defer if (needs_schedule) {
-            // wakeup the http thread to write the data
-            http.http_thread.scheduleRequestWrite(this.http.?, .data);
-        };
-
-        // dont have backpressure so we will schedule the data to be written
-        // if we have backpressure the onWritable will drain the buffer
-        needs_schedule = stream_buffer.isEmpty();
         if (this.skipChunkedFraming()) {
-            bun.handleOom(stream_buffer.write(data));
-        } else {
-            //16 is the max size of a hex number size that represents 64 bits + 2 for the \r\n
-            var formated_size_buffer: [18]u8 = undefined;
-            const formated_size = std.fmt.bufPrint(
-                formated_size_buffer[0..],
-                "{x}\r\n",
-                .{data.len},
-            ) catch |err| switch (err) {
-                error.NoSpaceLeft => unreachable,
-            };
-            bun.handleOom(stream_buffer.ensureUnusedCapacity(formated_size.len + data.len + 2));
-            stream_buffer.writeAssumeCapacity(formated_size);
-            stream_buffer.writeAssumeCapacity(data);
-            stream_buffer.writeAssumeCapacity("\r\n");
+            return if (this.sendHostBytes(.http_request_body, data)) .want_more else .backpressure;
         }
 
-        // pause the stream if we hit the high water mark
-        return if (stream_buffer.size() >= highWaterMark) .backpressure else .want_more;
+        var size_buffer: [18]u8 = undefined;
+        const size = std.fmt.bufPrint(&size_buffer, "{x}\r\n", .{data.len}) catch unreachable;
+        const framed = bun.default_allocator.alloc(u8, size.len + data.len + 2) catch return .backpressure;
+        defer bun.default_allocator.free(framed);
+        @memcpy(framed[0..size.len], size);
+        @memcpy(framed[size.len..][0..data.len], data);
+        @memcpy(framed[size.len + data.len ..], "\r\n");
+        return if (this.sendHostBytes(.http_request_body, framed)) .want_more else .backpressure;
     }
 
     pub fn writeEndRequest(this: *FetchTasklet, err: ?jsc.JSValue) void {
@@ -1324,15 +1219,41 @@ pub const FetchTasklet = struct {
             this.abortTask();
         } else {
             if (!this.skipChunkedFraming()) {
-                // Using chunked transfer encoding, send the terminating chunk
-                const thread_safe_stream_buffer = this.request_body_streaming_buffer orelse return;
-                const stream_buffer = thread_safe_stream_buffer.acquire();
-                defer thread_safe_stream_buffer.release();
-                bun.handleOom(stream_buffer.write(http.end_of_chunked_http1_1_encoding_response_body));
+                if (!this.sendHostBytes(.http_request_body, http.end_of_chunked_http1_1_encoding_response_body)) {
+                    this.abortTask();
+                    return;
+                }
             }
-            if (this.http) |http_| {
-                http.http_thread.scheduleRequestWrite(http_, .end);
+            if (bun.rt.vm_bridge.get()) |bridge| {
+                var command = bun.rt.contract.Command.init(.submit, .http_request_end);
+                command.request_id = this.host_request_id;
+                bridge.send(command) catch this.abortTask();
             }
+        }
+    }
+
+    fn sendHostBytes(this: *FetchTasklet, operation: bun.rt.contract.Operation, bytes: []const u8) bool {
+        const bridge = bun.rt.vm_bridge.get() orelse return false;
+        const payload = bridge.io.data.allocate(bytes.len) catch return false;
+        const mapped = bridge.io.data.map(payload) catch {
+            bridge.io.data.release(payload);
+            return false;
+        };
+        @memcpy(mapped.slice(), bytes);
+        var command = bun.rt.contract.Command.init(.submit, operation);
+        command.request_id = this.host_request_id;
+        command.payload = payload;
+        bridge.send(command) catch {
+            bridge.io.data.release(payload);
+            return false;
+        };
+        return true;
+    }
+
+    fn cancelHostRequest(this: *FetchTasklet) void {
+        if (this.host_request_id == 0) return;
+        if (bun.rt.vm_bridge.get()) |bridge| {
+            bridge.cancel(this.host_request_id, .http_request_start) catch {};
         }
     }
 
@@ -1340,9 +1261,7 @@ pub const FetchTasklet = struct {
         this.signal_store.aborted.store(true, .monotonic);
         this.tracker.didCancel(this.global_this);
 
-        if (this.http) |http_| {
-            http.http_thread.scheduleShutdown(http_);
-        }
+        this.cancelHostRequest();
     }
 
     const FetchOptions = struct {
@@ -1377,39 +1296,133 @@ pub const FetchTasklet = struct {
         global: *JSGlobalObject,
         fetch_options: *const FetchOptions,
         promise: jsc.JSPromise.Strong,
-    ) !*FetchTasklet {
-        http.HTTPThread.init(&.{});
+    ) std.mem.Allocator.Error!*FetchTasklet {
         var node = try get(
             allocator,
             global,
             fetch_options,
             promise,
         );
+        errdefer node.deref();
+        const bridge = bun.rt.vm_bridge.get() orelse Output.panic("runtime host bridge is not installed", .{});
+        const payload_bytes = node.host_request_payload orelse unreachable;
+        const payload = bridge.io.data.allocate(payload_bytes.len) catch return error.OutOfMemory;
+        errdefer bridge.io.data.release(payload);
+        @memcpy((bridge.io.data.map(payload) catch return error.OutOfMemory).slice(), payload_bytes);
+        allocator.free(payload_bytes);
+        node.host_request_payload = null;
 
-        var batch = bun.ThreadPool.Batch{};
-        node.http.?.schedule(allocator, &batch);
+        const request_id = bridge.allocateRequestId();
+        node.host_request_id = request_id;
         node.poll_ref.ref(global.bunVM());
-
-        // increment ref so we can keep it alive until the http client is done
         node.ref();
-        http.http_thread.schedule(batch);
+        errdefer node.deref();
+        var command = bun.rt.contract.Command.init(.submit, .http_request_start);
+        command.request_id = request_id;
+        command.payload = payload;
+        bridge.submit(command, .{ .context = node, .on_message = FetchTasklet.onHostMessage }) catch return error.OutOfMemory;
 
         return node;
     }
 
-    /// Called from HTTP thread. Handles HTTP events received from socket.
-    pub fn callback(task: *FetchTasklet, async_http: *http.AsyncHTTP, result: http.HTTPClientResult) void {
-        // at this point only this thread is accessing result to is no race condition
+    fn onHostMessage(context: *anyopaque, command: bun.rt.contract.Command) bool {
+        const task: *FetchTasklet = @ptrCast(@alignCast(context));
+        const bridge = bun.rt.vm_bridge.get() orelse return true;
+        defer if (!command.payload.isEmpty()) bridge.io.data.release(command.payload);
+
+        switch (command.operationKind()) {
+            .http_request_ready => {
+                var empty_body: MutableString = .{ .allocator = bun.default_allocator, .list = .empty };
+                task.acceptResult(.{
+                    .body = &empty_body,
+                    .has_more = true,
+                    .can_stream = true,
+                    .is_http2 = command.arg0 != 0,
+                });
+                return false;
+            },
+            .http_response_headers => {
+                const mapped = bridge.io.data.map(command.payload) catch {
+                    task.acceptHostFailure(error.InvalidHostResponse);
+                    return true;
+                };
+                const owned = bun.default_allocator.dupe(u8, mapped.slice()) catch {
+                    task.acceptHostFailure(error.OutOfMemory);
+                    return true;
+                };
+                const decoded = bun.rt.http_wire.decodeResponse(owned) catch {
+                    bun.default_allocator.free(owned);
+                    task.acceptHostFailure(error.InvalidHostResponse);
+                    return true;
+                };
+                const response_headers = bun.default_allocator.alloc(bun.picohttp.Header, decoded.prefix.header_count) catch {
+                    bun.default_allocator.free(owned);
+                    task.acceptHostFailure(error.OutOfMemory);
+                    return true;
+                };
+                for (response_headers, 0..) |*header, index| {
+                    const source = decoded.header(index).?;
+                    header.* = .{ .name = source.name, .value = source.value };
+                }
+                var empty_body: MutableString = .{ .allocator = bun.default_allocator, .list = .empty };
+                task.acceptResult(.{
+                    .body = &empty_body,
+                    .has_more = true,
+                    .metadata = .{
+                        .url = decoded.url(),
+                        .owned_buf = owned,
+                        .response = .{
+                            .status_code = decoded.prefix.status_code,
+                            .status = decoded.statusText(),
+                            .headers = .{ .list = response_headers },
+                        },
+                    },
+                });
+                return false;
+            },
+            .http_response_body => {
+                const mapped = bridge.io.data.map(command.payload) catch {
+                    task.acceptHostFailure(error.InvalidHostResponse);
+                    return true;
+                };
+                var body: MutableString = .{ .allocator = bun.default_allocator, .list = .empty };
+                _ = body.write(mapped.slice()) catch {
+                    task.acceptHostFailure(error.OutOfMemory);
+                    return true;
+                };
+                task.acceptResult(.{ .body = &body, .has_more = true });
+                return false;
+            },
+            .http_response_end => {
+                var empty_body: MutableString = .{ .allocator = bun.default_allocator, .list = .empty };
+                const failure: ?anyerror = if (command.status == 0)
+                    null
+                else switch (command.arg0) {
+                    1 => error.Timeout,
+                    2 => error.Aborted,
+                    else => error.FetchHostFailure,
+                };
+                task.acceptResult(.{ .body = &empty_body, .has_more = false, .fail = failure });
+                return true;
+            },
+            else => {
+                task.acceptHostFailure(error.InvalidHostResponse);
+                return true;
+            },
+        }
+    }
+
+    fn acceptHostFailure(task: *FetchTasklet, failure: anyerror) void {
+        var empty_body: MutableString = .{ .allocator = bun.default_allocator, .list = .empty };
+        task.acceptResult(.{ .body = &empty_body, .has_more = false, .fail = failure });
+    }
+
+    fn acceptResult(task: *FetchTasklet, result: http.HTTPClientResult) void {
         const is_done = !result.has_more;
-        // we are done with the http client so we can deref our side
-        // this is a atomic operation and will enqueue a task to deinit on the main thread
         defer if (is_done) task.derefFromThread();
 
         task.mutex.lock();
-        // we need to unlock before task.deref();
         defer task.mutex.unlock();
-        task.http.?.* = async_http.*;
-        task.http.?.response_buffer = async_http.response_buffer;
 
         log("callback success={} ignore_data={} has_more={} bytes={}", .{ result.isSuccess(), task.ignore_data, result.has_more, result.body.?.list.items.len });
 

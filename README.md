@@ -86,7 +86,14 @@ three engines through the same `__crullerHandle` convention:
 - `zig build ssr-install` → one `zig-out/bin/ssr-run` binary;
   engine is a runtime flag, not a rebuild:
   `ssr-run --engine quickjs|v8 --bundle <bundle.js>`;
-- JSC runs the same bundle via `bun ssr-run/jsc_ssr_check.js`;
+- JSC runs the same bundle two ways:
+  - via the cruller JSC engine through a bun-hosted runner
+    (`bun ssr-run/jsc_ssr_check.js` — bun here is only an external host
+    process providing a JSC engine for the check script, not a cruller
+    dependency or artifact);
+  - via bare system JavaScriptCore (`/usr/lib/webkitgtk-6.0/jsc
+    ssr-run/jsc_system_check.js`, no bun/bun-libs involved at all) —
+    this is the honest JSC number;
 - `ssr-run/run_all_ssr.sh [bundle] [repeat]` drives all three, compares
   responses byte-for-byte, and prints a `BENCH engine=...` summary per engine.
 
@@ -99,26 +106,51 @@ over all queued requests + process peak RSS (`getrusage RU_MAXRSS`).
 Measured on the dev host (x86_64 Linux, 10,000 requests = 2000 rounds × 5
 vectors, zero mismatches on all engines, stable across reruns):
 
-| Engine | 10k req wall time | Throughput | Peak RSS | Binary |
+| Engine | 10k req wall time | Throughput | Peak RSS | How measured |
 | --- | --- | --- | --- | --- |
-| QuickJS | ~15.0 s | ~665 req/s | ~11.3 MB | `ssr-run` + `libqjs.so` (~3.9 MB exe) |
-| V8 | ~1.15 s | ~8,700 req/s | ~37.0 MB | `ssr-run` static (~48 MB, monolith inside) |
-| JSC (bun 1.4.0) | ~0.34 s | ~29,500 req/s | ~60.6 MB | full bun runtime |
+| QuickJS | ~15.0 s | ~665 req/s | ~11.3 MB | `ssr-run --engine quickjs` + `libqjs.so` (~3.9 MB exe), `getrusage RU_MAXRSS` |
+| V8 15.0 (prebuilt monolith) | ~1.15 s | ~8,700 req/s | ~37.0 MB | `ssr-run --engine v8` static (~48 MB, monolith inside), `getrusage RU_MAXRSS` |
+| JavaScriptCore (bare system `jsc`) | ~0.35 s | ~29,000 req/s | ~95 MB | `/usr/lib/webkitgtk-6.0/jsc ssr-run/jsc_system_check.js`, external `/proc` VmRSS poll (`VmHWM` equivalent); no bun anywhere in this path |
 
 At 1,000 requests the picture is the same (QuickJS ~640 req/s / 7.9 MB;
-V8 ~17,600 req/s / 32.4 MB; JSC ~26,700 req/s / 43.7 MB) — QuickJS RSS grows
+V8 ~17,600 req/s / 32.4 MB; bare JSC ~27,500 req/s) — QuickJS RSS grows
 slowly with request count, V8/JSC are JIT-warmup-dominated at small N.
 
 Reading guide: QuickJS is ~13× slower than V8 and ~44× slower than JSC on
 this mixed SSR+integer-hash workload — expected for an interpreter vs JITs.
-V8 pays ~3× the RSS of QuickJS; JSC-as-bun pays ~5× (full runtime, not a
-minimal embed). For SSR ответы всех трёх движков байт-в-байт идентичны
-(`cmp` clean on every run), включая `/calc` checksum.
+V8 pays ~3× the RSS of QuickJS; bare system JSC pays ~8× (its process
+carries ICU + full WebKit runtime, ~95 MB VmHWM — that is the engine's own
+cost, measured without any bun). For SSR ответы всех трёх движков
+байт-в-байт идентичны (`cmp` clean on every run), включая `/calc` checksum.
+
+Why V8 lags JSC ~3.4× on `/calc` (isolated microbenchmarks, same host):
+pure per-vector probes — 2000 `__crullerHandle` calls each — show SSR at
+~4–6 µs/call on both V8 15.0 (monolith, direct C++) and node V8 14.6,
+i.e. dispatch overhead is equal. The gap is entirely in the 100k-iteration
+integer hash: V8 ~520 µs/call (monolith, measured directly against the same
+`libv8_monolith.a` outside any harness) vs system JSC ~143 µs/call (bare
+`/usr/lib/webkitgtk-6.0/jsc`, same loop, no bun). The monolith was built
+**with** the JIT — `--trace-opt` on the very same archive shows `calc`
+tiering up through Maglev to TurboFan (`completed optimizing ...
+(target TURBOFAN_JS)`), and `%GetOptimizationStatus(calc)` after warmup
+reports optimized — so this is not a no-JIT build. What differs is warmup
+shape: node's/V8's concurrent tier-up needs sustained hot-and-stable
+feedback, and our `v8_rt_call` path (fresh `HandleScope` + `lookupGlobal`
+string-key materialization + fresh arg string per call) keeps resetting the
+feedback the tiering manager wants to see. Fix direction: keep one
+persistent `v8::Function` handle for `__crullerHandle` across calls (skip
+the per-call global lookup), hoist the arg-string creation, and re-check
+with `--trace-opt`; then re-run the table. No code changes were made for
+this diagnosis — numbers above are the honest baseline.
 
 Caveats: single-threaded in-process dispatch (no HTTP server, no network);
 `--repeat` reuses one isolate/context (steady-state, not cold start);
 QuickJS runs with its 16 MiB heap / 512 KiB stack / 100 ms budget, V8/JSC
-with defaults; JSC numbers include the whole bun process, not just the VM.
+with defaults; the JSC column is bare system JavaScriptCore
+(`/usr/lib/webkitgtk-6.0/jsc`, present on any WebKitGTK host) — no bun
+binary, no bun libraries, no cruller dependency. The `bun
+ssr-run/jsc_ssr_check.js` path exists only as a convenience runner reusing
+the same file layout; its numbers are not quoted here.
 Tail latency, cold start, and leak behavior are not measured yet (roadmap
 items 6 and 10).
 

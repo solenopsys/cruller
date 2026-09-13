@@ -26,9 +26,12 @@ echo "--- quickjs ---"
 run_engine quickjs /tmp/out-qjs.json /tmp/qjs.log
 echo "--- v8 ---"
 run_engine v8 /tmp/out-v8.json /tmp/v8.log
-echo "--- jsc (bun, тот же бандл) ---"
+echo "--- jsc via cruller runner (bun host) ---"
 bun "$JSC_CHECK" "$BUNDLE" "$REPEAT" --json > /tmp/out-jsc.json 2>/tmp/jsc.log
 grep -h "BENCH" /tmp/jsc.log
+
+echo "--- jsc bare system (/usr/lib/webkitgtk-6.0/jsc, no bun) ---"
+echo "(timing/RSS via external poll; see README benchmark section)"
 
 echo "--- diff quickjs vs v8 (responses) ---"
 if cmp -s /tmp/out-qjs.json /tmp/out-v8.json; then

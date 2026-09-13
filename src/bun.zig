@@ -1852,6 +1852,7 @@ pub const rt = struct {
     pub const host_http = @import("./rt/host_http.zig");
     pub const jsc_engine = @import("./rt/jsc_engine.zig");
     pub const quickjs_engine = @import("./rt/quickjs_engine.zig");
+    pub const v8_engine = @import("./rt/v8_engine.zig");
     pub const engine_selector = @import("./rt/engine_selector.zig");
     pub const monolith = @import("./rt/monolith.zig");
 };

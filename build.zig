@@ -7,6 +7,7 @@ const std = @import("std");
 const ObjectFormat = enum { obj, bc };
 
 const qjs_wrapper_dir = "../qjs";
+const v8_wrapper_dir = "../v8";
 
 fn qjsTargetTriple(b: *std.Build, target: std.Build.ResolvedTarget) []const u8 {
     const arch = switch (target.result.cpu.arch) {
@@ -41,6 +42,48 @@ fn linkQjsForTest(b: *std.Build, compile: *std.Build.Step.Compile, target: std.B
     compile.root_module.linkSystemLibrary("qjs", .{});
     compile.root_module.link_libc = true;
     return lib_dir;
+}
+
+/// Build the sibling v8 wrapper (real backend) into
+/// ../cruller/.zig-cache/v8/<arch>-<abi>/ and link its shim archive plus
+/// the prebuilt V8 monolith into `compile`. The monolith objects use CREL
+/// relocations and local-exec TLS: GNU ld cannot consume them, and they
+/// cannot go into a -shared .so — so this path forces lld and only works
+/// for the native-target test binary.
+fn linkV8ForTest(b: *std.Build, compile: *std.Build.Step.Compile, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) void {
+    const target_dir = b.fmt("{s}-{s}", .{ @tagName(target.result.cpu.arch), @tagName(target.result.abi) });
+    const install_dir = b.fmt("../cruller/.zig-cache/v8/{s}", .{target_dir});
+    const wrapper = b.addSystemCommand(&.{
+        b.graph.zig_exe,
+        "build",
+        "-Dv8-backend=real",
+        b.fmt("-Dtarget={s}", .{qjsTargetTriple(b, target)}),
+        b.fmt("-Doptimize={s}", .{@tagName(optimize)}),
+        "--prefix",
+        install_dir,
+    });
+    wrapper.setCwd(b.path(v8_wrapper_dir));
+    wrapper.setName("build V8 wrapper (real)");
+    compile.step.dependOn(&wrapper.step);
+
+    // The v8 wrapper's third-party bundle (headers + prebuilt monolith +
+    // system-compiled shim) lives in its own source tree; cruller only
+    // references it, never copies it.
+    const shim_src = b.fmt("{s}/third-party/v8-shim.o", .{v8_wrapper_dir});
+    const monolith_src = b.fmt("{s}/third-party/v8/libv8_monolith.a", .{v8_wrapper_dir});
+    compile.root_module.addObjectFile(b.path(shim_src));
+    compile.root_module.addObjectFile(.{ .cwd_relative = b.pathFromRoot(monolith_src) });
+    // Shim + monolith were compiled against the system libstdc++ (regpacy
+    // recipe: system clang++, not Zig's bundled libc++ which mangles
+    // std::__1::*). Zig has no direct "link this exact .so" API, so pass
+    // the full path as an extra linker object — lld accepts a shared
+    // library as input and resolves the std::* symbols from it.
+    compile.root_module.addObjectFile(.{ .cwd_relative = "/usr/lib/gcc/x86_64-pc-linux-gnu/16/libstdc++.so" });
+    compile.root_module.linkSystemLibrary("atomic", .{});
+    compile.root_module.link_libc = true;
+    compile.root_module.link_libcpp = false;
+    compile.use_llvm = true;
+    compile.use_lld = true;
 }
 
 pub fn build(b: *std.Build) void {
@@ -233,7 +276,49 @@ pub fn build(b: *std.Build) void {
     const qjs_lib_dir = linkQjsForTest(b, qjs_tests, target, optimize);
     const run_qjs_tests = b.addRunArtifact(qjs_tests);
     run_qjs_tests.setEnvironmentVariable("LD_LIBRARY_PATH", b.pathFromRoot(qjs_lib_dir));
+
+    const v8_tests = b.addTest(.{
+        .name = "rt-v8-engine-tests",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/rt/v8_engine_tests.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        }),
+    });
+    linkV8ForTest(b, v8_tests, target, optimize);
+    const run_v8_tests = b.addRunArtifact(v8_tests);
+
     const rt_test_step = b.step("rt-test", "Проверить прямые транспорты runtime boundary");
     rt_test_step.dependOn(&run_rt_tests.step);
     rt_test_step.dependOn(&run_qjs_tests.step);
+    rt_test_step.dependOn(&run_v8_tests.step);
+
+    // --- шаг "ssr-run": ОДИН бинарь — один и тот же SSR-бандл, движок
+    // выбирается в рантайме флагом `--engine=quickjs|v8`.
+    // (Отдельные бинари на движок убраны: переключаться надо флагом,
+    // а не пересборкой. jsc гоняется тем же бандлом через bun — см.
+    // ssr-run/jsc_ssr_check.js, монолит bun в zig-бинарь не линкуется.)
+    const ssr_root = b.createModule(.{
+        .root_source_file = b.path("src/rt/ssr_run.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    // БЕЗ bun и БЕЗ build_options: движок — рантайм-флаг, бандл — argv.
+    // ssr_run.zig импортирует только contract + оба engine (чистый std).
+    const ssr_exe = b.addExecutable(.{
+        .name = "ssr-run",
+        .root_module = ssr_root,
+    });
+    // qjs линкуется динамически (.so рядом), v8 — статически (шим + монолит).
+    const ssr_qjs_lib_dir = linkQjsForTest(b, ssr_exe, target, optimize);
+    linkV8ForTest(b, ssr_exe, target, optimize);
+    const run_ssr = b.addRunArtifact(ssr_exe);
+    run_ssr.setEnvironmentVariable("LD_LIBRARY_PATH", b.pathFromRoot(ssr_qjs_lib_dir));
+    if (b.args) |args| run_ssr.addArgs(args);
+    const ssr_step = b.step("ssr-run", "Прогнать SSR-бандл: --engine quickjs|v8 --bundle <bundle.js>");
+    ssr_step.dependOn(&run_ssr.step);
+    const ssr_install = b.step("ssr-install", "Собрать ssr-run бинарь (оба движка внутри)");
+    ssr_install.dependOn(&b.addInstallArtifact(ssr_exe, .{}).step);
 }

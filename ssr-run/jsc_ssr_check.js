@@ -1,13 +1,13 @@
-// JSC check: грузим тот же bundle.js и гоняем те же вектора, что ssr_run.zig.
-// ДВА ФАЙЛА (один файл на два шелла невозможен: system-jsc падает на парсе
-// слов `Bun`/`await` даже внутри мертвых веток):
-//  1. jsc_ssr_check.js (этот): cruller-режим через bun-раннер.
-//     Использование: bun jsc_ssr_check.js <bundle> [repeat] [--json]
-//     Формат JSON-выхода — та же форма, что у zig-бинаря (--json) + BENCH.
-//  2. jsc_system_check.js: bare /usr/lib/webkitgtk-6.0/jsc, чистый движок.
-//     Нет argv/readFile-async/Date-timing не нужен: repeat захардкожен,
-//     меряем снаружи (/usr/bin/time -v: wall + Maximum resident).
-//     Использование: /usr/lib/webkitgtk-6.0/jsc jsc_system_check.js
+// JSC check: load the same bundle.js and run the same vectors as ssr_run.zig.
+// TWO FILES (one file cannot serve both shells: system-jsc fails to parse the
+// words `Bun`/`await` even inside dead branches):
+//  1. jsc_ssr_check.js (this one): cruller mode through the bun runner.
+//     Usage: bun jsc_ssr_check.js <bundle> [repeat] [--json]
+//     The JSON output format is the same shape as the zig binary (--json) + BENCH.
+//  2. jsc_system_check.js: bare /usr/lib/webkitgtk-6.0/jsc, pure engine.
+//     No argv/readFile-async/Date-timing needed: repeat is hardcoded,
+//     we measure externally (/usr/bin/time -v: wall + Maximum resident).
+//     Usage: /usr/lib/webkitgtk-6.0/jsc jsc_system_check.js
 const BUNDLE_PATH = "/home/alexstorm/distrib/business/converged/core/native/wrappers/rt/ssr-preact/dist/bundle.js";
 
 const baseVectors = [
@@ -45,11 +45,11 @@ function drive(handle, total, collectJson) {
 }
 
 if (typeof readFile === "function" && typeof print === "function" && typeof Bun === "undefined") {
-  // --- safety: запустили bun-файл под bare jsc — сказать прямо ---
+  // --- safety: the bun file was launched under bare jsc — say so plainly ---
   print("use jsc_system_check.js for bare system jsc");
   throw new Error("wrong runner");
 } else {
-  // --- cruller JSC через bun-раннер ---
+  // --- cruller JSC through the bun runner ---
   var bundlePath = BUNDLE_PATH;
   var repeat = 1;
   var jsonOut = false;

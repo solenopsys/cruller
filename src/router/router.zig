@@ -1573,7 +1573,7 @@ test "Github API Route Loader" {
     var ctx = MockRequestContextType{
         .url = try URLPath.parse("/hi"),
     };
-    const fixtures = struct { // bzrt: test_runner вырезан
+    const fixtures = struct { // bzrt: test_runner removed
         pub const github_api_routes_list: []const []const u8 = &.{};
         pub const sample_route_list: []const []const u8 = &.{};
     };
@@ -1685,7 +1685,7 @@ test "Sample Route Loader" {
     var ctx = MockRequestContextType{
         .url = try URLPath.parse("/hi"),
     };
-    const fixtures = struct { // bzrt: test_runner вырезан
+    const fixtures = struct { // bzrt: test_runner removed
         pub const github_api_routes_list: []const []const u8 = &.{};
         pub const sample_route_list: []const []const u8 = &.{};
     };

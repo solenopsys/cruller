@@ -696,7 +696,7 @@ pub const JSGlobalObject = opaque {
         return ZigGlobalObject__readableStreamToFormData(this, value, content_type);
     }
 
-    // bzrt: napi вырезан
+    // bzrt: napi removed
 
     pub inline fn assertOnJSThread(this: *JSGlobalObject) void {
         if (bun.Environment.allow_assert) this.bunVM().assertOnJSThread();

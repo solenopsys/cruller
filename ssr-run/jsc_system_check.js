@@ -1,11 +1,11 @@
-// Bare system JSC check (/usr/lib/webkitgtk-6.0/jsc): чистый движок,
-// только ES5-синтаксис (шелл старый, `const`/стрелки ок, но никаких
-// Bun/process/await — файл парсится целиком до выполнения).
-// repeat захардкожен; wall time и память меряем СНАРУЖИ:
+// Bare system JSC check (/usr/lib/webkitgtk-6.0/jsc): pure engine,
+// ES5 syntax only (the shell is old: `const`/arrows are fine, but no
+// Bun/process/await — the file is parsed in full before execution).
+// repeat is hardcoded; wall time and memory are measured EXTERNALLY:
 //   /usr/bin/time -v /usr/lib/webkitgtk-6.0/jsc jsc_system_check.js
-// Ответы сверяются строго (включая /calc checksum) — mismatch = throw.
+// Responses are checked strictly (including the /calc checksum) — mismatch = throw.
 var BUNDLE = "/home/alexstorm/distrib/business/converged/core/native/wrappers/rt/ssr-preact/dist/bundle.js";
-var REPEAT = 2000; // 10000 запросов
+var REPEAT = 2000; // 10000 requests
 
 var VECTORS = [
   '{"method":"GET","path":"/","headers":[],"body":""}',

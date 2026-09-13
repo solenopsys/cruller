@@ -4306,7 +4306,7 @@ const strings = bun.strings;
 const logger = bun.logger;
 const Msg = logger.Msg;
 
-// bzrt: npm-резолюция вырезана — заглушки типов
+// bzrt: npm resolution removed — type stubs
 const Install = struct {
     pub const PackageID = u32;
     pub const DependencyID = u32;
@@ -4323,6 +4323,6 @@ const PackageManager = struct {
     };
 };
 
-// bzrt: npm-типы
+// bzrt: npm types
 const Resolution = struct {};
 const Package = struct {};

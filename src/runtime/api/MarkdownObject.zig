@@ -1,6 +1,6 @@
-// bzrt-cut: markdown-рендерер (`src/md/`) вырезан из рантайма (tz.md §1.1).
-// Оставлен только JS-биндинг `Bun.markdown`, чьи методы бросают исключение —
-// сам объект по-прежнему создаётся, чтобы не ломать привязку в BunObject.
+// bzrt-cut: markdown renderer (`src/md/`) removed from the runtime (tz.md §1.1).
+// Only the JS binding `Bun.markdown` is kept, whose methods throw an exception —
+// the object itself is still created so as not to break the binding in BunObject.
 
 pub fn create(globalThis: *jsc.JSGlobalObject) jsc.JSValue {
     const object = JSValue.createEmptyObject(globalThis, 4);

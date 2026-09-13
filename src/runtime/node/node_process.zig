@@ -1,5 +1,5 @@
 //! Process information and control APIs (`globalThis.process` / `node:process`)
-// bzrt: cli вырезан — заголовок процесса храним локально
+// bzrt: cli removed — process title is stored locally
 var bzrt_process_title: ?[]const u8 = null;
 comptime {
     @export(&getTitle, .{ .name = "Bun__Process__getTitle" });

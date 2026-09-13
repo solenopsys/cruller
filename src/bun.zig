@@ -185,12 +185,12 @@ pub const Mode = sys.Mode;
 
 // Platform-specific system APIs. If something can be implemented on multiple
 // platforms, it does not belong in these three namespaces.
-pub const windows = struct { // bzrt: linux-only, заглушка для AstGen/Sema
+pub const windows = struct { // bzrt: linux-only, stub for AstGen/Sema
     pub const libuv = struct {
         pub const uv_file = i32;
         pub const UV_ECHARSET: i32 = -4080;
         pub const UV_EFTYPE: i32 = -4028;
-        // uv_dirent_type_t (Node ожидает эти числа в Bun__Dirent__toJS)
+        // uv_dirent_type_t (Node expects these numbers in Bun__Dirent__toJS)
         pub const UV_DIRENT_UNKNOWN: i32 = 0;
         pub const UV_DIRENT_FILE: i32 = 1;
         pub const UV_DIRENT_DIR: i32 = 2;
@@ -1193,7 +1193,7 @@ pub fn isMissingIOUring() bool {
 }
 
 // bzrt-cut: pub const cli = @import("./cli/cli.zig");
-/// bzrt: cli вырезан; crash_handler дёргает только эти два поля для диагностики.
+/// bzrt: cli removed; crash_handler touches only these two fields for diagnostics.
 pub const cli_compat = struct {
     pub const is_main_thread: bool = true;
     pub const cmd: ?struct {
@@ -1276,8 +1276,8 @@ fn getFdPathViaCWD(fd: std.posix.fd_t, buf: *bun.PathBuffer) ![]u8 {
     return getcwd(buf);
 }
 
-/// zig 0.16: `std.posix.getcwd` удалён; линуксовый raw-syscall возвращает длину
-/// (включая нуль-терминатор) или отрицательный errno.
+/// zig 0.16: `std.posix.getcwd` removed; the Linux raw syscall returns the length
+/// (including the NUL terminator) or a negative errno.
 pub fn getcwd(out_buffer: []u8) ![]u8 {
     const rc = std.os.linux.getcwd(out_buffer.ptr, out_buffer.len);
     const signed: isize = @bitCast(rc);
@@ -1667,7 +1667,7 @@ pub fn reloadProcess(
         }
     } else if (comptime Environment.isPosix) {
         if (comptime Environment.isLinux or Environment.isFreeBSD) on_before_reload_process_linux();
-        // zig 0.16: std.posix.execveZ удалён → raw linux.execve (возвращается только при ошибке)
+        // zig 0.16: std.posix.execveZ removed → raw linux.execve (returns only on error)
         _ = std.os.linux.execve(exec_path, newargv, envp);
         if (may_return) {
             Output.errGeneric("Failed to reload process", .{});
@@ -1835,7 +1835,7 @@ pub const StringMap = struct {
 
 pub const DotEnv = @import("./dotenv/env_loader.zig");
 // bzrt-cut: pub const bundle_v2 = @import("./bundler/bundle_v2.zig");
-pub const Loader = @import("./bundler/options.zig").Loader; // bzrt: bundle_v2 вырезан
+pub const Loader = @import("./bundler/options.zig").Loader; // bzrt: bundle_v2 removed
 // bzrt-cut: pub const BundleV2 = bundle_v2.BundleV2;
 // bzrt-cut: pub const ParseTask = bundle_v2.ParseTask;
 
@@ -1929,9 +1929,9 @@ pub const Generation = u16;
 
 pub const zstd = @import("./zstd/zstd.zig");
 pub const StringPointer = schema.api.StringPointer;
-// bzrt-cut: standalone_graph вырезан (компиляция в single-file exe не нужна).
-// Заглушка: get() всегда null, поэтому раздача embedded-файлов из бинаря
-// отключена — JS всегда приходит с диска пре-собранным.
+// bzrt-cut: standalone_graph removed (compiling to a single-file exe is not needed).
+// Stub: get() always returns null, so serving embedded files from the binary
+// is disabled — JS always comes from disk pre-built.
 pub const StandaloneModuleGraph = struct {
     pub const File = struct {
         contents: []const u8 = "",
@@ -2017,7 +2017,7 @@ const WindowsStat = extern struct {
     }
 };
 
-pub const Stat = @import("./sys/PosixStat.zig").PosixStat; // bzrt: linux-only; в 0.16 std.posix.Stat на linux = void
+pub const Stat = @import("./sys/PosixStat.zig").PosixStat; // bzrt: linux-only; in 0.16 std.posix.Stat on linux = void
 pub const StatFS = switch (Environment.os) {
     .mac, .linux, .freebsd => bun.c.struct_statfs,
     .windows => windows.libuv.uv_statfs_t,
@@ -3236,7 +3236,7 @@ pub const hw_timer = @import("./perf/hw_timer.zig");
 
 pub fn getRoughTickCount(comptime mock_mode: timespec.MockMode) timespec {
     if (mock_mode == .allow_mocked_time) {
-        // bzrt: fake timers (test_runner) вырезаны
+        // bzrt: fake timers (test_runner) removed
     }
 
     const ns_value = hw_timer.nowNs();
@@ -3249,7 +3249,7 @@ pub fn getRoughTickCount(comptime mock_mode: timespec.MockMode) timespec {
 /// Monotonic milliseconds. Values are only meaningful relative to other calls.
 pub fn getRoughTickCountMs(comptime mock_mode: timespec.MockMode) u64 {
     if (mock_mode == .allow_mocked_time) {
-        // bzrt: fake timers (test_runner) вырезаны
+        // bzrt: fake timers (test_runner) removed
     }
     return hw_timer.nowMs();
 }
@@ -3819,7 +3819,7 @@ pub fn getUseSystemCA(globalObject: *jsc.JSGlobalObject, callFrame: *jsc.CallFra
     _ = globalObject;
     _ = callFrame;
     // bzrt-cut:     const Arguments = @import("./cli/Arguments.zig");
-    return jsc.JSValue.jsBoolean(false); // bzrt: CLI вырезан
+    return jsc.JSValue.jsBoolean(false); // bzrt: CLI removed
 }
 
 // Claude thinks its bun.JSC when we renamed it to bun.jsc months ago.

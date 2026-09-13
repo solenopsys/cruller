@@ -88,7 +88,7 @@ pub const Transpiler = struct {
 
     pub const isCacheEnabled = false;
 
-    // bzrt: package manager вырезан
+    // bzrt: package manager removed
 
     pub fn setLog(this: *Transpiler, log: *logger.Log) void {
         this.log = log;

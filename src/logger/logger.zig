@@ -1281,7 +1281,7 @@ pub const Source = struct {
 
     pub fn rangeOfIdentifier(_: *const Source, loc: Loc) Range {
 // bzrt-cut:         const js_lexer = @import("../js_parser/lexer.zig");
-        return Range{ .loc = loc, .len = 0 }; // bzrt: js_lexer вырезан
+        return Range{ .loc = loc, .len = 0 }; // bzrt: js_lexer removed
     }
 
     pub fn isWebAssembly(this: *const Source) bool {

@@ -3,7 +3,7 @@
 //! `export fn` symbol names are still discoverable from C++.
 
 export fn zig__renderDiff(expected_ptr: [*:0]const u8, expected_len: usize, received_ptr: [*:0]const u8, received_len: usize, globalThis: *bun.jsc.JSGlobalObject) void {
-    _ = globalThis; // bzrt: DiffFormatter (test_runner) вырезан — сырой вывод
+    _ = globalThis; // bzrt: DiffFormatter (test_runner) removed — raw output
     bun.Output.errorWriter().print("DIFF:\nexpected: {s}\nreceived: {s}\n", .{ expected_ptr[0..expected_len], received_ptr[0..received_len] }) catch {};
 }
 

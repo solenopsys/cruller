@@ -345,8 +345,8 @@ pub fn hasField(comptime T: type, comptime name: []const u8) bool {
 const bun = @import("bun");
 const std = @import("std");
 
-// bzrt: zig 0.16 удалил @Type — общие хелперы реификации из старых
-// []const StructField/UnionField (формы 0.15 совместимы по полям).
+// bzrt: zig 0.16 removed @Type — the shared reification helpers from the old
+// []const StructField/UnionField (0.15 forms are field-compatible).
 pub fn ReifyStruct(
     comptime layout: std.builtin.Type.ContainerLayout,
     comptime BackingInt: ?type,

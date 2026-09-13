@@ -205,14 +205,14 @@ pub const BunObject = struct {
     }
 };
 
-/// bzrt: заглушка для JS-колбэков вырезанных подсистем (css/shell). Бросает
-/// исключение, если код действительно попытается их вызвать в рантайме.
+/// bzrt: stub for JS callbacks of removed subsystems (css/shell). Throws
+/// an exception if code actually tries to invoke them at runtime.
 pub fn cutFeatureCallback(globalThis: *jsc.JSGlobalObject, _: *jsc.CallFrame) bun.JSError!jsc.JSValue {
     return globalThis.throw("This Bun API is not available in the bzrt runtime.", .{});
 }
 
 pub fn shellEscape(globalThis: *jsc.JSGlobalObject, callframe: *jsc.CallFrame) bun.JSError!jsc.JSValue {
-    // bzrt-cut: bun.shell вырезан.
+    // bzrt-cut: bun.shell removed.
     _ = callframe;
     return globalThis.throw("Bun.$ (shell) is not available in the bzrt runtime.", .{});
 }
@@ -220,7 +220,7 @@ pub fn shellEscape(globalThis: *jsc.JSGlobalObject, callframe: *jsc.CallFrame) b
 pub fn braces(global: *jsc.JSGlobalObject, brace_str: bun.String, opts: gen.BracesOptions) bun.JSError!jsc.JSValue {
     _ = brace_str;
     _ = opts;
-    return global.throw("Bun.braces удалён в bzrt", .{});
+    return global.throw("Bun.braces was removed in bzrt", .{});
 }
 
 pub fn which(globalThis: *jsc.JSGlobalObject, callframe: *jsc.CallFrame) bun.JSError!jsc.JSValue {
@@ -524,7 +524,7 @@ pub fn getArgv(globalThis: *jsc.JSGlobalObject, _: *jsc.JSObject) jsc.JSValue {
 
 pub fn openInEditor(globalThis: *jsc.JSGlobalObject, callframe: *jsc.CallFrame) bun.JSError!JSValue {
     _ = callframe;
-    return globalThis.throw("Bun.openInEditor удалён в bzrt", .{});
+    return globalThis.throw("Bun.openInEditor was removed in bzrt", .{});
 }
 
 pub fn getPublicPath(to: string, origin: URL, comptime Writer: type, writer: Writer) void {
@@ -597,7 +597,7 @@ pub fn sleepSync(globalObject: *jsc.JSGlobalObject, callframe: *jsc.CallFrame) b
         return globalObject.throwInvalidArguments("argument to sleepSync must not be negative, got {d}", .{milliseconds});
     }
 
-    // zig 0.16: std.Thread.sleep удалён → raw nanosleep
+    // zig 0.16: std.Thread.sleep removed → raw nanosleep
     const ns: u64 = @as(u64, @intCast(milliseconds)) * std.time.ns_per_ms;
     var req = std.os.linux.timespec{ .sec = @intCast(ns / std.time.ns_per_s), .nsec = @intCast(ns % std.time.ns_per_s) };
     _ = std.os.linux.nanosleep(&req, null);
@@ -1128,7 +1128,7 @@ pub fn getYAMLObject(globalThis: *jsc.JSGlobalObject, _: *jsc.JSObject) jsc.JSVa
 
 pub fn getArchiveConstructor(globalThis: *jsc.JSGlobalObject, _: *jsc.JSObject) jsc.JSValue {
     _ = globalThis;
-    return .js_undefined; // bzrt: Archive вырезан
+    return .js_undefined; // bzrt: Archive removed
 }
 
 pub fn getGlobConstructor(globalThis: *jsc.JSGlobalObject, _: *jsc.JSObject) jsc.JSValue {
@@ -1928,12 +1928,12 @@ pub fn createBunStdout(globalThis: *jsc.JSGlobalObject) callconv(.c) jsc.JSValue
     return blob.toJS(globalThis);
 }
 
-// bzrt: braces вырезаны вместе с shell
+// bzrt: braces removed along with shell
 const Which = @import("../../which/which.zig");
 const options = @import("../../bundler/options.zig");
 const std = @import("std");
 const zlib = @import("../../zlib/zlib.zig");
-// bzrt: open-in-editor вырезан вместе с cli
+// bzrt: open-in-editor removed along with cli
 const URL = @import("../../url/url.zig").URL;
 const conv = std.builtin.CallingConvention.Unspecified;
 

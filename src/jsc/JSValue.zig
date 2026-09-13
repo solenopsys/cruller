@@ -2484,7 +2484,7 @@ const string = []const u8;
 
 const FFI = @import("./FFI.zig");
 const std = @import("std");
-const JestPrettyFormat = struct {}; // bzrt: test_runner вырезан
+const JestPrettyFormat = struct {}; // bzrt: test_runner removed
 
 const bun = @import("bun");
 const Environment = bun.Environment;

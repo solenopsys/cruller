@@ -1,11 +1,11 @@
-//! bzrt: сборочный харнес урезанного Bun на ванильном zig 0.16 (Linux-only).
+//! bzrt: build harness for the trimmed Bun on vanilla zig 0.16 (Linux-only).
 //!
-//! Воспроизводит модульный граф из родного build.zig (addInternalImports):
-//! "bun" (циклический self-import) + build_options + translated-c-headers +
-//! zlib-internal/async + кодогенные модули из build/codegen (см. scripts/codegen.py).
+//! Reproduces the module graph from the native build.zig (addInternalImports):
+//! "bun" (cyclic self-import) + build_options + translated-c-headers +
+//! zlib-internal/async + codegen modules from build/codegen (see scripts/codegen.py).
 //!
-//! `zig build --build-file build016.zig check` — только семантический анализ
-//! (addObject, без линковки JSC/C++).
+//! `zig build --build-file build016.zig check` — semantic analysis only
+//! (addObject, without linking JSC/C++).
 
 const std = @import("std");
 
@@ -24,7 +24,7 @@ pub fn build(b: *std.Build) void {
         "--target=codegen",
     });
 
-    // --- build_options: поля 1:1 из BunBuildOptions.buildOptionsModule ---
+    // --- build_options: fields 1:1 from BunBuildOptions.buildOptionsModule ---
     const opts = b.addOptions();
     opts.addOption([]const u8, "base_path", b.pathFromRoot("."));
     opts.addOption([]const u8, "codegen_path", b.pathFromRoot("build/codegen"));
@@ -58,14 +58,14 @@ pub fn build(b: *std.Build) void {
     translate_c.defineCMacroRaw("FREEBSD=0");
     translate_c.addIncludePath(b.path("vendor/zstd/lib"));
 
-    // --- модуль "bun" ---
+    // --- "bun" module ---
     const bun = b.createModule(.{
         .root_source_file = b.path("src/bun.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,
     });
-    bun.addImport("bun", bun); // разрешённый циклический импорт
+    bun.addImport("bun", bun); // permitted cyclic import
     bun.addImport("build_options", opts.createModule());
     bun.addImport("translated-c-headers", b.createModule(.{
         .root_source_file = translate_c.getOutput(),
@@ -89,7 +89,7 @@ pub fn build(b: *std.Build) void {
         bun.addImport(entry[0], mod);
     }
 
-    // --- корень type-check ---
+    // --- type-check root ---
     const check_root = b.createModule(.{
         .root_source_file = b.path("check_root.zig"),
         .target = target,
@@ -100,6 +100,6 @@ pub fn build(b: *std.Build) void {
 
     const obj = b.addObject(.{ .name = "bzrt-check", .root_module = check_root });
     obj.step.dependOn(&generate_codegen.step);
-    const check = b.step("check", "Семантический анализ урезанного дерева");
+    const check = b.step("check", "Semantic analysis of the trimmed tree");
     check.dependOn(&obj.step);
 }

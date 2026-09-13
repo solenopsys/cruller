@@ -1,67 +1,72 @@
-//! ssr-run: ОДИН бинарь — один и тот же SSR-бандл, движок выбирается
-//! в рантайме флагом `--engine=quickjs|v8` (jsc — тем же бандлом через bun,
-//! см. ssr-run/jsc_ssr_check.js: standalone не линкует монолит bun).
+//! ssr-run: ONE binary — the same SSR bundle, engine selected at runtime
+//! by the `--engine=quickjs|v8` flag (jsc runs the same bundle through bun,
+//! see ssr-run/jsc_ssr_check.js: standalone does not link the bun monolith).
 //!
-//! Использование:
+//! Usage:
 //!   zig build ssr-run -- --bundle ../ssr-preact/dist/bundle.js --engine quickjs
 //!   ./zig-out/bin/ssr-run --bundle <path> --engine v8 [--repeat N] [--json]
 //!
-//! Формат запросов захардкожен (4 вектора: /, /about, /nope, bad-json),
-//! ответы сверяются с ожиданиями из node-прогона; несовпадение = exit 1.
-//! Peak RSS печатается в stderr (getrusage RU_MAXRSS).
+//! The request format is hardcoded (5 SSR vectors: /, /about, /nope, bad-json,
+//! /calc; or 1 hw vector); responses are checked against the node-run
+//! expectations; a mismatch exits with code 1. Peak RSS is printed to stderr
+//! (getrusage RU_MAXRSS); harness memory is O(1), so RSS reflects the engine,
+//! not the run's buffers.
 
 const std = @import("std");
 const contract = @import("./contract.zig");
 const QuickJsEngine = @import("./quickjs_engine.zig").QuickJsEngine;
 const V8Engine = @import("./v8_engine.zig").V8Engine;
 
-// standalone: движок выбирается compile-time через -Dengine, поэтому файл
-// импортирует только contract + engine_selector + ОДИН engine.
-// direct.zig тянет "bun" (Mutex) — здесь своя минимальная копия канала и
-// пула на std.atomic спинлоке, без bun-зависимости. Копия намеренная:
-// ssr-run обязан собираться голым zig без codegen/build_options монолита.
+// standalone: the engine is selected at compile time via -Dengine, so this
+// file imports only contract + engine_selector + ONE engine.
+// direct.zig pulls in "bun" (Mutex) — this is a minimal local copy of the
+// pool on a std.atomic spinlock, with no bun dependency. The copy is
+// deliberate: ssr-run must build with plain zig and no monolith
+// codegen/build_options.
+//
+// Harness memory is kept O(1) in the request count (otherwise RSS would
+// measure the harness buffers instead of the engine):
+//   * Producer — a virtual to_engine: it holds no queue, it synthesizes the
+//     next server_request on the pump's demand plus the final shutdown;
+//   * Sink — a virtual to_host: it validates and releases each response
+//     inside send instead of accumulating them until the end of the run.
 
-const Channel = struct {
-    allocator: std.mem.Allocator,
-    mutex: std.atomic.Mutex = .unlocked,
-    queue: std.array_list.Managed(contract.Command),
-    read_index: usize = 0,
+const Producer = struct {
+    data: *Pool,
+    vectors: []const []const u8,
+    total: usize,
+    emitted: usize = 0,
+    finished: bool = false,
 
-    fn init(allocator: std.mem.Allocator) Channel {
-        return .{ .allocator = allocator, .queue = std.array_list.Managed(contract.Command).init(allocator) };
-    }
-
-    fn deinit(self: *Channel) void {
-        self.queue.deinit();
-    }
-
-    fn transport(self: *Channel) contract.CommandTransport {
+    fn transport(self: *Producer) contract.CommandTransport {
         return .{ .context = self, .vtable = &vtable };
     }
 
-    fn lock(self: *Channel) void {
-        while (!self.mutex.tryLock()) std.atomic.spinLoopHint();
-    }
-
-    fn send(context: ?*anyopaque, command: *const contract.Command) callconv(.c) bool {
-        const self: *Channel = @ptrCast(@alignCast(context.?));
-        self.lock();
-        defer self.mutex.unlock();
-        self.queue.append(command.*) catch return false;
-        return true;
+    fn send(_: ?*anyopaque, _: *const contract.Command) callconv(.c) bool {
+        return false;
     }
 
     fn receive(context: ?*anyopaque, out: *contract.Command) callconv(.c) bool {
-        const self: *Channel = @ptrCast(@alignCast(context.?));
-        self.lock();
-        defer self.mutex.unlock();
-        if (self.read_index >= self.queue.items.len) return false;
-        out.* = self.queue.items[self.read_index];
-        self.read_index += 1;
-        if (self.read_index == self.queue.items.len) {
-            self.queue.clearRetainingCapacity();
-            self.read_index = 0;
+        const self: *Producer = @ptrCast(@alignCast(context.?));
+        if (self.emitted >= self.total) {
+            if (self.finished) return false;
+            self.finished = true;
+            out.* = contract.Command.init(.shutdown, .none);
+            return true;
         }
+        const request = self.vectors[self.emitted % self.vectors.len];
+        const data = self.data.transport();
+        const ref = data.allocate(request.len) catch return false;
+        const mapped = data.map(ref) catch {
+            data.release(ref);
+            return false;
+        };
+        @memcpy(mapped.slice(), request);
+        self.emitted += 1;
+        var command = contract.Command.init(.event, .server_request);
+        command.request_id = self.emitted;
+        command.payload = ref;
+        out.* = command;
         return true;
     }
 
@@ -69,6 +74,88 @@ const Channel = struct {
 
     const vtable: contract.CommandTransport.VTable = .{ .send = send, .receive = receive, .set_waker = setWaker };
 };
+
+fn Sink(comptime Writer: type) type {
+    return struct {
+        data: *Pool,
+        engine_kind: EngineKind,
+        active_vectors: []const []const u8,
+        is_hw: bool,
+        json_out: bool,
+        out: *Writer,
+        responses: usize = 0,
+        failed: usize = 0,
+        seen_started: bool = false,
+        seen_stopped: bool = false,
+        first_json: bool = true,
+
+        fn transport(self: *@This()) contract.CommandTransport {
+            return .{ .context = self, .vtable = &vtable };
+        }
+
+        fn send(context: ?*anyopaque, command: *const contract.Command) callconv(.c) bool {
+            const self: *@This() = @ptrCast(@alignCast(context.?));
+            switch (command.operationKind()) {
+                .engine_started => {
+                    self.seen_started = true;
+                    return true;
+                },
+                .engine_stopped => {
+                    self.seen_stopped = true;
+                    return true;
+                },
+                .server_response_end => {},
+                else => return true,
+            }
+            self.responses += 1;
+            const data = self.data.transport();
+            if (command.payload.isEmpty()) {
+                self.failed += 1;
+                return true;
+            }
+            const mapped = data.map(command.payload) catch return true;
+            defer data.release(command.payload);
+            const body = mapped.slice();
+            const vec_index = (self.responses - 1) % self.active_vectors.len;
+            const ok = if (self.is_hw) std.mem.eql(u8, body, "hw") else checkVector(vec_index, body);
+            if (!ok) self.failed += 1;
+            if (self.json_out) {
+                if (!self.first_json) self.out.interface.writeAll(",\n") catch {};
+                self.first_json = false;
+                if (self.is_hw) {
+                    self.out.interface.print("  {{\"request_id\":{d},\"ok\":{s},\"response\":\"{s}\"}}", .{
+                        command.request_id,
+                        if (ok) "true" else "false",
+                        body,
+                    }) catch {};
+                } else {
+                    self.out.interface.print("  {{\"request_id\":{d},\"ok\":{s},\"response\":{s}}}", .{
+                        command.request_id,
+                        if (ok) "true" else "false",
+                        body,
+                    }) catch {};
+                }
+            } else {
+                self.out.interface.print("[{s}/{d}] req={d} status={d} ok={s}\n", .{
+                    @tagName(self.engine_kind),
+                    self.responses,
+                    command.request_id,
+                    command.status,
+                    if (ok) "yes" else "NO",
+                }) catch {};
+            }
+            return true;
+        }
+
+        fn receive(_: ?*anyopaque, _: *contract.Command) callconv(.c) bool {
+            return false;
+        }
+
+        fn setWaker(_: ?*anyopaque, _: contract.CommandTransport.Waker) callconv(.c) void {}
+
+        const vtable: contract.CommandTransport.VTable = .{ .send = send, .receive = receive, .set_waker = setWaker };
+    };
+}
 
 const Pool = struct {
     const pool_id: u32 = 1;
@@ -81,9 +168,19 @@ const Pool = struct {
     allocator: std.mem.Allocator,
     mutex: std.atomic.Mutex = .unlocked,
     slots: std.array_list.Managed(Slot),
+    // Indices of slots whose `bytes == null`, so `allocate` is O(1) instead
+    // of scanning `slots` from the start. Without this, queueing N requests
+    // grows the pool and every allocate rescans the whole live prefix,
+    // turning the hw workload (N ~ 1e5) into O(N^2) harness time and
+    // swamping the per-request cost being measured.
+    free: std.array_list.Managed(u32),
 
     fn init(allocator: std.mem.Allocator) Pool {
-        return .{ .allocator = allocator, .slots = std.array_list.Managed(Slot).init(allocator) };
+        return .{
+            .allocator = allocator,
+            .slots = std.array_list.Managed(Slot).init(allocator),
+            .free = std.array_list.Managed(u32).init(allocator),
+        };
     }
 
     fn deinit(self: *Pool) void {
@@ -91,6 +188,7 @@ const Pool = struct {
             if (slot.bytes) |bytes| self.allocator.free(bytes);
         }
         self.slots.deinit();
+        self.free.deinit();
     }
 
     fn transport(self: *Pool) contract.DataTransport {
@@ -116,13 +214,12 @@ const Pool = struct {
         const bytes = self.allocator.alloc(u8, len) catch return false;
         self.lock();
         defer self.mutex.unlock();
-        for (self.slots.items, 0..) |*slot, index| {
-            if (slot.bytes == null) {
-                slot.bytes = bytes;
-                slot.refs = 1;
-                out.* = .{ .pool_id = pool_id, .buffer_id = @intCast(index), .generation = slot.generation, .length = @intCast(len) };
-                return true;
-            }
+        if (self.free.pop()) |index| {
+            const slot = &self.slots.items[index];
+            slot.bytes = bytes;
+            slot.refs = 1;
+            out.* = .{ .pool_id = pool_id, .buffer_id = index, .generation = slot.generation, .length = @intCast(len) };
+            return true;
         }
         self.slots.append(.{ .bytes = bytes, .refs = 1 }) catch {
             self.allocator.free(bytes);
@@ -168,6 +265,7 @@ const Pool = struct {
         slot.bytes = null;
         slot.generation +%= 1;
         if (slot.generation == 0) slot.generation = 1;
+        self.free.append(ref.buffer_id) catch {};
     }
 
     fn getSlot(self: *Pool, ref: contract.BufferRef) ?*Slot {
@@ -194,12 +292,19 @@ const Implementation = union(EngineKind) {
     v8: V8Engine,
 };
 
-const vectors = [_][]const u8{
+// SSR workload: 5 vectors (see checkVector for expectations).
+const ssr_vectors = [_][]const u8{
     "{\"method\":\"GET\",\"path\":\"/\",\"headers\":[],\"body\":\"\"}",
     "{\"method\":\"GET\",\"path\":\"/about\",\"headers\":[],\"body\":\"\"}",
     "{\"method\":\"GET\",\"path\":\"/nope\",\"headers\":[],\"body\":\"\"}",
     "{oops",
     "{\"method\":\"GET\",\"path\":\"/calc\",\"headers\":[],\"body\":\"\"}",
+};
+
+// hw workload: one request, handler returns the literal bytes `hw`, no
+// JSON envelope and no compute — the pure dispatch/call ceiling.
+const hw_vectors = [_][]const u8{
+    "{\"method\":\"GET\",\"path\":\"/\",\"headers\":[],\"body\":\"\"}",
 };
 
 pub fn main(init: std.process.Init) !void {
@@ -209,11 +314,16 @@ pub fn main(init: std.process.Init) !void {
     defer args.deinit();
     var bundle: []const u8 = "";
     var engine_name: []const u8 = "quickjs";
+    var workload: []const u8 = "ssr";
     var repeat: usize = 1;
     var json_out = false;
     while (args.next()) |arg| {
         if (std.mem.eql(u8, arg, "--json")) {
             json_out = true;
+        } else if (std.mem.eql(u8, arg, "--workload")) {
+            workload = args.next() orelse return error.MissingWorkload;
+        } else if (std.mem.startsWith(u8, arg, "--workload=")) {
+            workload = arg["--workload=".len..];
         } else if (std.mem.startsWith(u8, arg, "--engine=")) {
             engine_name = arg["--engine=".len..];
         } else if (std.mem.eql(u8, arg, "--engine")) {
@@ -230,23 +340,46 @@ pub fn main(init: std.process.Init) !void {
         }
     }
     const engine_kind = std.meta.stringToEnum(EngineKind, engine_name) orelse {
-        std.debug.print("usage: ssr-run --bundle <bundle.js> --engine quickjs|v8 [--repeat N] [--json]\n", .{});
+        std.debug.print("usage: ssr-run --bundle <bundle.js> --engine quickjs|v8 [--workload ssr|hw] [--repeat N] [--json]\n", .{});
         return error.MissingEngine;
     };
     if (bundle.len == 0) {
-        std.debug.print("usage: ssr-run --bundle <bundle.js> --engine quickjs|v8 [--repeat N] [--json]\n", .{});
+        std.debug.print("usage: ssr-run --bundle <bundle.js> --engine quickjs|v8 [--workload ssr|hw] [--repeat N] [--json]\n", .{});
         return error.MissingBundle;
     }
 
+    const is_hw = std.mem.eql(u8, workload, "hw");
+    if (!is_hw and !std.mem.eql(u8, workload, "ssr")) {
+        std.debug.print("unknown --workload {s} (want ssr|hw)\n", .{workload});
+        return error.BadWorkload;
+    }
+    const active_vectors: []const []const u8 = if (is_hw) &hw_vectors else &ssr_vectors;
+
     const source = try std.Io.Dir.cwd().readFileAlloc(init.io, bundle, allocator, .limited(std.math.maxInt(u32)));
 
-    // Один процесс = один движок. Каналы/пул — локальные, без "bun".
-    var to_host = Channel.init(allocator);
-    defer to_host.deinit();
-    var to_engine = Channel.init(allocator);
-    defer to_engine.deinit();
+    // One process = one engine. The pool/transports are local, without "bun".
     var data = Pool.init(allocator);
     defer data.deinit();
+
+    const total = active_vectors.len * repeat;
+    var producer: Producer = .{ .data = &data, .vectors = active_vectors, .total = total };
+
+    var out_buf: [8192]u8 = undefined;
+    var stdout = std.Io.File.stdout().writer(init.io, &out_buf);
+    var sink: Sink(@TypeOf(stdout)) = .{
+        .data = &data,
+        .engine_kind = engine_kind,
+        .active_vectors = active_vectors,
+        .is_hw = is_hw,
+        .json_out = json_out,
+        .out = &stdout,
+    };
+
+    const io: contract.Duplex = .{
+        .to_host = sink.transport(),
+        .to_engine = producer.transport(),
+        .data = data.transport(),
+    };
 
     var implementation: Implementation = switch (engine_kind) {
         .quickjs => .{ .quickjs = undefined },
@@ -254,19 +387,11 @@ pub fn main(init: std.process.Init) !void {
     };
     const engine: contract.Engine = switch (engine_kind) {
         .quickjs => blk: {
-            try implementation.quickjs.init(allocator, .{ .io = .{
-                .to_host = to_host.transport(),
-                .to_engine = to_engine.transport(),
-                .data = data.transport(),
-            } });
+            try implementation.quickjs.init(allocator, .{ .io = io });
             break :blk implementation.quickjs.engine();
         },
         .v8 => blk: {
-            try implementation.v8.init(allocator, .{ .io = .{
-                .to_host = to_host.transport(),
-                .to_engine = to_engine.transport(),
-                .data = data.transport(),
-            } });
+            try implementation.v8.init(allocator, .{ .io = io });
             break :blk implementation.v8.engine();
         },
     };
@@ -277,90 +402,25 @@ pub fn main(init: std.process.Init) !void {
     defer data.transport().release(name_ref);
     try engine.load(source_ref, name_ref);
 
-    // Заранее кладём N повторов каждого вектора + shutdown.
-    const total = vectors.len * repeat;
-    for (0..repeat) |_| {
-        for (vectors, 1..) |request, index| {
-            // request_id должен быть стабилен между повторами? Нет —
-            // выдаём сквозные id, ответы сверяем по порядку.
-            _ = index;
-            var command = contract.Command.init(.event, .server_request);
-            command.request_id = 0; // перезапишем ниже
-            command.payload = try data.copy(request);
-            try to_engine.transport().send(command);
-        }
-    }
-    // Перенумеруем request_id по порядку (1..total).
-    {
-        var id: u64 = 1;
-        var i: usize = 0;
-        while (i < to_engine.queue.items.len) : (i += 1) {
-            if (to_engine.queue.items[i].operationKind() == .server_request) {
-                to_engine.queue.items[i].request_id = id;
-                id += 1;
-            }
-        }
-    }
-    try to_engine.transport().send(contract.Command.init(.shutdown, .none));
-
+    if (json_out) try stdout.interface.writeAll("[\n");
     const started_ns = monotonicNs();
     try engine.run();
     const elapsed_ns = monotonicNs() - started_ns;
-
-    // Собираем ответы: engine_started, total x server_response_end, engine_stopped.
-    const started = to_host.transport().receive() orelse return error.NoStarted;
-    if (started.operationKind() != .engine_started) return error.BadStarted;
-
-    var failed: usize = 0;
-    var responses: usize = 0;
-    // Ответы — в stdout (Io.File.stdout, построчно, без буфера): их парсит
-    // run_all_ssr.sh и складывает в out-<engine>.json для cmp.
-    // Диагностика (ok/NO, peak RSS) — в stderr через std.debug.print.
-    var out_buf: [8192]u8 = undefined;
-    var stdout = std.Io.File.stdout().writer(init.io, &out_buf);
-    if (json_out) try stdout.interface.writeAll("[\n");
-    var first_json = true;
-    while (responses < total) {
-        const response = to_host.transport().receive() orelse break;
-        if (response.operationKind() != .server_response_end) return error.BadResponse;
-        responses += 1;
-        const mapped = try data.transport().map(response.payload);
-        defer data.transport().release(response.payload);
-        const body = mapped.slice();
-        const vec_index = (responses - 1) % vectors.len;
-        const ok = checkVector(vec_index, body);
-        if (!ok) failed += 1;
-        if (json_out) {
-            if (!first_json) try stdout.interface.writeAll(",\n");
-            first_json = false;
-            try stdout.interface.print("  {{\"request_id\":{d},\"ok\":{s},\"response\":{s}}}", .{
-                response.request_id,
-                if (ok) "true" else "false",
-                body,
-            });
-        } else {
-            try stdout.interface.print("[{s}/{d}] req={d} status={d} ok={s}\n", .{
-                @tagName(engine_kind),
-                responses,
-                response.request_id,
-                response.status,
-                if (ok) "yes" else "NO",
-            });
-        }
-    }
     if (json_out) try stdout.interface.writeAll("\n]\n");
     try stdout.interface.flush();
 
-    const stopped = to_host.transport().receive() orelse return error.NoStopped;
-    if (stopped.operationKind() != .engine_stopped) return error.BadStopped;
-    if (responses != total) {
-        std.debug.print("FAIL: got {d} responses, want {d}\n", .{ responses, total });
+    if (!sink.seen_started) return error.NoStarted;
+    if (!sink.seen_stopped) return error.NoStopped;
+    if (sink.responses != total) {
+        std.debug.print("FAIL: got {d} responses, want {d}\n", .{ sink.responses, total });
         return error.ResponseCount;
     }
+    const responses = sink.responses;
+    const failed = sink.failed;
 
     const rss_kb = peakRssKb();
-    // Сводная строка для README-таблицы: движок, число ответов, wall-time,
-    // req/s, peak RSS, число несовпадений. Парсится bench_all.sh по префиксу.
+    // Summary line for the README table: engine, response count, wall time,
+    // req/s, peak RSS, mismatch count. Parsed by bench_all.sh by prefix.
     const elapsed_ms: f64 = @as(f64, @floatFromInt(elapsed_ns)) / 1_000_000.0;
     const rps: f64 = if (elapsed_ns > 0)
         @as(f64, @floatFromInt(responses)) * 1_000_000_000.0 / @as(f64, @floatFromInt(elapsed_ns))
@@ -377,14 +437,14 @@ pub fn main(init: std.process.Init) !void {
     if (failed != 0) std.process.exit(1);
 }
 
-/// Сверка с ожиданиями из node-прогона bundle.js:
+/// Check against the expectations from the node run of bundle.js:
 /// 0:/ -> 200 + <title>Home</title> + Rendered on /
 /// 1:/about -> 200 + <title>About</title> + Rendered on /about
-/// 2:/nope -> 200 + Home (фолбэк) + Rendered on /nope
+/// 2:/nope -> 200 + Home (fallback) + Rendered on /nope
 /// 3:bad-json -> 400 + bad request
-/// 4:/calc -> 200 + точный детерминированный результат
-///   (result=502474356, iterations=100000). Строгое равенство подряд:
-///   расхождение движков = mismatch, а не шум.
+/// 4:/calc -> 200 + the exact deterministic result
+///   (result=502474356, iterations=100000). Exact equality in sequence:
+///   any engine divergence is a mismatch, not noise.
 fn checkVector(index: usize, body: []const u8) bool {
     const has = struct {
         fn has(haystack: []const u8, needle: []const u8) bool {
@@ -402,7 +462,7 @@ fn checkVector(index: usize, body: []const u8) bool {
 }
 
 fn peakRssKb() usize {
-    // Linux: ru_maxrss в килобайтах.
+    // Linux: ru_maxrss is in kilobytes.
     const usage = std.posix.getrusage(std.c.rusage.SELF);
     return @intCast(usage.maxrss);
 }

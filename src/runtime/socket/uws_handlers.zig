@@ -276,9 +276,9 @@ pub fn WSClient(comptime ssl: bool) type {
 }
 
 // ── SQL drivers ─────────────────────────────────────────────────────────────
-// bzrt: postgres вырезан
+// bzrt: postgres removed
 
-// bzrt: mysql вырезан
+// bzrt: mysql removed
 
 pub fn Valkey(comptime ssl: bool) type {
     return NsHandler(js_valkey.JSValkeyClient, js_valkey.SocketHandler(ssl), ssl);

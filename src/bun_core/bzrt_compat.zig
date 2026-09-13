@@ -1,5 +1,5 @@
-//! bzrt: компат-шим для API, удалённых в zig 0.16.
-//! Центральная точка получения Io — потом заменить на настоящий Io.Threaded.
+//! bzrt: compat shim for APIs removed in zig 0.16.
+//! Central point for obtaining Io — to be replaced later with the real Io.Threaded.
 const std = @import("std");
 
 pub fn io() std.Io {
@@ -15,7 +15,7 @@ pub fn nanosleep(secs: u64, nanos: u64) void {
     _ = std.c.nanosleep(&ts, null);
 }
 
-/// Замена std.time.Timer (удалён в 0.16) на монотонных часах libc.
+/// Replacement for std.time.Timer (removed in 0.16) using the libc monotonic clock.
 pub const Timer = struct {
     started: i128,
 
@@ -41,7 +41,7 @@ pub const Timer = struct {
     }
 };
 
-/// Замена std.once (удалён в 0.16); мьютекс — pthread, т.к. libc всегда слинкован.
+/// Replacement for std.once (removed in 0.16); mutex is pthread since libc is always linked.
 pub fn once(comptime f: fn () void) Once(f) {
     return .{};
 }
@@ -63,7 +63,7 @@ pub fn Once(comptime f: fn () void) type {
     };
 }
 
-/// Managed-обёртки над ArrayHashMap (0.16 оставил только unmanaged).
+/// Managed wrappers over ArrayHashMap (0.16 left only unmanaged).
 pub fn ArrayHashMapManaged(comptime K: type, comptime V: type, comptime Context: type, comptime store_hash: bool) type {
     return struct {
         unmanaged: Unmanaged = .empty,
@@ -267,7 +267,7 @@ pub fn milliTimestamp() i64 {
     return @as(i64, ts.sec) * 1000 + @divTrunc(@as(i64, ts.nsec), std.time.ns_per_ms);
 }
 
-/// Замена std.crypto.random (в 0.16 csprng переехал в Io) на getrandom(2).
+/// Replacement for std.crypto.random (in 0.16 csprng moved into Io) using getrandom(2).
 pub fn rand() std.Random {
     return .{ .ptr = undefined, .fillFn = randFill };
 }
@@ -281,7 +281,7 @@ fn randFill(_: *anyopaque, buf: []u8) void {
     }
 }
 
-/// 0.15 std.io.GenericWriter: минимально достаточная копия.
+/// 0.15 std.io.GenericWriter: minimally sufficient copy.
 pub fn GenericWriter(
     comptime Context: type,
     comptime WriteError: type,
@@ -376,7 +376,7 @@ pub fn GenericWriter(
             };
             adapter.new_interface.print(fmt, args) catch {
                 if (adapter.err) |e| return e;
-                unreachable; // fixed-буфер дренится в writeFn, другой причины нет
+                unreachable; // the fixed buffer is drained in writeFn, there is no other cause
             };
             adapter.new_interface.flush() catch {
                 if (adapter.err) |e| return e;
@@ -390,7 +390,7 @@ pub fn GenericWriter(
     };
 }
 
-/// 0.15 std.io.GenericReader: минимально достаточная копия.
+/// 0.15 std.io.GenericReader: minimally sufficient copy.
 pub fn GenericReader(
     comptime Context: type,
     comptime ReadError: type,
@@ -465,15 +465,15 @@ fn listWriteFn(comptime L: type) fn (L, []const u8) std.mem.Allocator.Error!usiz
     }.write;
 }
 
-/// 0.15 std.io.FixedBufferStream (writer+reader над срезом).
+/// 0.15 std.io.FixedBufferStream (writer+reader over a slice).
 pub fn fixedBufferStream(buffer: anytype) FixedBufferStream(@TypeOf(buffer)) {
     return .{
         .buffer = switch (@typeInfo(@TypeOf(buffer))) {
             .pointer => |ptr| switch (ptr.size) {
-                .one => buffer, // *[N]u8 коэрсится в срез ниже по типу поля
+                .one => buffer, // *[N]u8 coerces to a slice below via the field type
                 else => buffer,
             },
-            else => @compileError("fixedBufferStream: ожидается срез или указатель на массив"),
+            else => @compileError("fixedBufferStream: expected a slice or a pointer to an array"),
         },
         .pos = 0,
     };
@@ -538,7 +538,7 @@ pub fn FixedBufferStream(comptime BufferPtr: type) type {
     };
 }
 
-/// 0.15 std.net.Address: только то, что использует bun (v4/v6 + формат).
+/// 0.15 std.net.Address: only what bun uses (v4/v6 + format).
 pub const NetAddress = extern union {
     any: std.posix.sockaddr,
     in: extern struct {

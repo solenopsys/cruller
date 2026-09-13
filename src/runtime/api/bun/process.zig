@@ -943,7 +943,7 @@ const WaiterThreadPosix = struct {
 
         if (comptime Environment.isLinux) {
             const one = @as([8]u8, @bitCast(@as(usize, 1)));
-            // zig 0.16: std.posix.write удалён → raw linux.write
+            // zig 0.16: std.posix.write removed → raw linux.write
             _ = std.os.linux.write(instance.eventfd.cast(), &one, one.len);
         }
     }
@@ -961,7 +961,7 @@ const WaiterThreadPosix = struct {
 
         if (comptime Environment.isLinux) {
             const linux = std.os.linux;
-            // zig 0.16: std.posix.eventfd удалён → raw linux.eventfd (usize + errno)
+            // zig 0.16: std.posix.eventfd removed → raw linux.eventfd (usize + errno)
             const efd = linux.eventfd(0, linux.EFD.NONBLOCK | linux.EFD.CLOEXEC | 0);
             if (@as(isize, @bitCast(efd)) < 0) return error.SystemResources;
             instance.eventfd = .fromNative(@intCast(efd));
@@ -971,7 +971,7 @@ const WaiterThreadPosix = struct {
         thread.detach();
     }
 
-    // zig 0.16: posix.Sigaction handler принимает SIG-enum, не c_int
+    // zig 0.16: posix.Sigaction handler takes a SIG-enum, not c_int
     fn wakeup(_: std.posix.SIG) callconv(.c) void {
         const one = @as([8]u8, @bitCast(@as(usize, 1)));
         _ = bun.sys.write(instance.eventfd, &one).unwrap() catch 0;
@@ -2924,7 +2924,7 @@ const uv = bun.windows.libuv;
 const ChromeProcess = bun.api.ChromeProcess;
 const WebViewHostProcess = bun.api.WebViewHostProcess;
 
-// bzrt-cut: LifecycleScriptSubprocess, SecurityScanSubprocess (install вырезан)
+// bzrt-cut: LifecycleScriptSubprocess, SecurityScanSubprocess (install removed)
 
 const jsc = bun.jsc;
 const Subprocess = jsc.Subprocess;

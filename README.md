@@ -95,53 +95,100 @@ three engines through the same `__crullerHandle` convention:
     ssr-run/jsc_system_check.js`, no bun/bun-libs involved at all) —
     this is the honest JSC number;
 - `ssr-run/run_all_ssr.sh [bundle] [repeat]` drives all three, compares
-  responses byte-for-byte, and prints a `BENCH engine=...` summary per engine.
+  responses byte-for-byte, and prints a `BENCH engine=...` summary per engine;
+- `ssr-run/run_all_hw.sh [repeat]` runs the minimal `hw` workload
+  (`--workload hw --bundle ssr-run/hw.js`) on QuickJS/V8 + bare system JSC.
 
-Workload: 5 vectors per round (`/`, `/about`, `/nope` → SSR HTML;
+Workload (SSR): 5 vectors per round (`/`, `/about`, `/nope` → SSR HTML;
 bad-JSON → 400; `/calc` → 100k-iteration integer hash chain with an exact
 expected checksum `result=502474356`, so engine divergence is a mismatch,
 not noise). One process = one engine; metric is wall time for `engine.run()`
-over all queued requests + process peak RSS (`getrusage RU_MAXRSS`).
+over all N requests + process peak RSS (`getrusage RU_MAXRSS`). The harness
+itself is O(1) in memory regardless of N: a virtual `to_engine` producer
+synthesizes each request on demand (no pre-queued backlog) and a `to_host`
+sink validates and releases each response inline (no accumulated responses),
+so peak RSS reflects the engine, not the harness buffers.
 
-Measured on the dev host (x86_64 Linux, 10,000 requests = 2000 rounds × 5
+Measured on the dev host (x86_64 Linux, 100,000 requests = 20,000 rounds × 5
 vectors, zero mismatches on all engines, stable across reruns):
 
-| Engine | 10k req wall time | Throughput | Peak RSS | How measured |
+| Engine | 100k req wall time | Throughput | Peak RSS | How measured |
 | --- | --- | --- | --- | --- |
-| QuickJS | ~15.0 s | ~665 req/s | ~11.3 MB | `ssr-run --engine quickjs` + `libqjs.so` (~3.9 MB exe), `getrusage RU_MAXRSS` |
-| V8 15.0 (prebuilt monolith) | ~1.15 s | ~8,700 req/s | ~37.0 MB | `ssr-run --engine v8` static (~48 MB, monolith inside), `getrusage RU_MAXRSS` |
-| JavaScriptCore (bare system `jsc`) | ~0.35 s | ~29,000 req/s | ~95 MB | `/usr/lib/webkitgtk-6.0/jsc ssr-run/jsc_system_check.js`, external `/proc` VmRSS poll (`VmHWM` equivalent); no bun anywhere in this path |
+| QuickJS | ~148 s | ~677 req/s | ~7.5 MB | `ssr-run --engine quickjs` + `libqjs.so`, `getrusage RU_MAXRSS` |
+| V8 15.0 (prebuilt monolith) | ~2.94 s | ~34,000 req/s | ~36.6 MB | `ssr-run --engine v8` static (~48 MB on disk, monolith inside), `getrusage RU_MAXRSS` |
+| JavaScriptCore (bare system `jsc`) | ~3.79 s | ~26,400 req/s | ~164 MB | `/usr/lib/webkitgtk-6.0/jsc ssr-run/jsc_system_check.js` (REPEAT=20000), external `/proc` VmRSS poll; no bun anywhere in this path |
 
-At 1,000 requests the picture is the same (QuickJS ~640 req/s / 7.9 MB;
-V8 ~17,600 req/s / 32.4 MB; bare JSC ~27,500 req/s) — QuickJS RSS grows
-slowly with request count, V8/JSC are JIT-warmup-dominated at small N.
+At 10,000 requests the ordering is identical (QuickJS ~15.0 s / ~666 req/s /
+~7.6 MB; V8 ~0.30 s / ~33,500 req/s / ~34.6 MB; bare JSC ~0.40 s /
+~24,400 req/s / ~92 MB); at 1,000 requests all three are JIT-warmup-dominated,
+more so V8 and JSC (QuickJS ~1.5 s / ~7.5 MB; V8 ~42 ms / ~32.2 MB). QuickJS
+RSS is flat from 1k to 100k (~7.5 MB), V8 from ~32 to ~37 MB — the earlier
+N-linear growth was the old queueing harness, not the engines.
 
-Reading guide: QuickJS is ~13× slower than V8 and ~44× slower than JSC on
+Reading guide: QuickJS is ~51× slower than V8 and ~40× slower than JSC on
 this mixed SSR+integer-hash workload — expected for an interpreter vs JITs.
-V8 pays ~3× the RSS of QuickJS; bare system JSC pays ~8× (its process
-carries ICU + full WebKit runtime, ~95 MB VmHWM — that is the engine's own
-cost, measured without any bun). For SSR ответы всех трёх движков
-байт-в-байт идентичны (`cmp` clean on every run), включая `/calc` checksum.
+On memory, QuickJS stays flat at ~7.5 MB across 1k–100k requests; V8 pays
+~4.9× that (~36.6 MB: isolate + prebuilt monolith) and bare system JSC ~22×
+(its process carries ICU + full WebKit runtime, ~164 MB VmHWM at 100k — that
+is the engine's own cost, measured without any bun). The responses from all
+three engines are byte-for-byte identical (`cmp` clean on every run),
+including the `/calc` checksum.
 
-Why V8 lags JSC ~3.4× on `/calc` (isolated microbenchmarks, same host):
-pure per-vector probes — 2000 `__crullerHandle` calls each — show SSR at
-~4–6 µs/call on both V8 15.0 (monolith, direct C++) and node V8 14.6,
-i.e. dispatch overhead is equal. The gap is entirely in the 100k-iteration
-integer hash: V8 ~520 µs/call (monolith, measured directly against the same
-`libv8_monolith.a` outside any harness) vs system JSC ~143 µs/call (bare
-`/usr/lib/webkitgtk-6.0/jsc`, same loop, no bun). The monolith was built
-**with** the JIT — `--trace-opt` on the very same archive shows `calc`
-tiering up through Maglev to TurboFan (`completed optimizing ...
-(target TURBOFAN_JS)`), and `%GetOptimizationStatus(calc)` after warmup
-reports optimized — so this is not a no-JIT build. What differs is warmup
-shape: node's/V8's concurrent tier-up needs sustained hot-and-stable
-feedback, and our `v8_rt_call` path (fresh `HandleScope` + `lookupGlobal`
-string-key materialization + fresh arg string per call) keeps resetting the
-feedback the tiering manager wants to see. Fix direction: keep one
-persistent `v8::Function` handle for `__crullerHandle` across calls (skip
-the per-call global lookup), hoist the arg-string creation, and re-check
-with `--trace-opt`; then re-run the table. No code changes were made for
-this diagnosis — numbers above are the honest baseline.
+## hw workload: pure dispatch ceiling
+
+`ssr-run --workload hw --bundle ssr-run/hw.js` sends 100,000 requests whose
+handler is literally `globalThis.__crullerHandle = () => "hw"` — no SSR, no
+JSON envelope, no compute. It isolates the per-request cost of the shared
+C-ABI path (on-demand request → pool buffer → engine call → inline response
+release), so it is the complement to the compute-heavy SSR table:
+
+| Engine | 100k req wall time | Throughput | Peak RSS |
+| --- | --- | --- | --- |
+| QuickJS | ~35 ms (34–41) | ~2.89 M req/s | ~7.1 MB |
+| V8 15.0 | ~47 ms (42–47) | ~2.11 M req/s | ~27.1 MB |
+
+QuickJS wins the empty-call path by ~20%: V8's per-call machinery
+(isolate/HandleScope/TryCatch/context scope plus the persistent-handle
+cache) costs more than QuickJS's interpreter call. That is the opposite of
+the compute-heavy SSR result, which is exactly why both numbers are here.
+Both engines go through the same `ssr-run` binary and pool, so this
+comparison is apples-to-apples.
+
+Bare system JSC is **not** comparable on `hw`: the JSC runners call
+`__crullerHandle` directly from a JS loop (there is no cruller C-ABI bridge
+for JSC yet), and JSC constant-folds the empty handler, so its ~9.6 M req/s
+is loop/dead-code elimination, not dispatch. Its SSR rows above are still
+valid because the `/calc` result cannot be folded away.
+
+Harness note: `ssr_run.zig`'s `Pool` used to rescan all live slots on every
+`allocate`; at 100k requests that O(n²) dominated the hw workload (a ~10×
+per-request inflation). It now keeps a free-list, so 100k requests run in
+tens of milliseconds.
+
+`/calc` and the V8/JSC inliner trade-off: the vector is a 100k-iteration
+integer hash chain, and the two JITs prefer *opposite* code shapes for it.
+When the loop lives in a separate helper reached through the SSR dispatch
+chain, V8 refuses to inline it, leaves it as an OSR function, and repeatedly
+deopts on the post-loop `>>> 0` (`Insufficient type feedback for binary
+operation`, 92/94 bailouts at that bytecode); this costs V8 ~4.5× and
+reproduces **identically in plain Node 26.8.1 with no cruller code in the
+process** — it is V8's inliner/tiering behavior, not our embedder and not a
+`v8_rt_call` feedback reset (an earlier note here blamed the shim; that was
+wrong). JSC is the mirror image: it prefers the separate helper
+(~140 µs/call) over an inlined loop (~172 µs/call). The bundle therefore
+keeps the loop **inlined into the handler** (`ssr-preact/src/app.jsx`,
+commented): V8 ~130 µs/call, JSC ~172 µs/call, same checksum on every
+engine. That shape decides the ordering of the V8 and JSC rows above; the
+route not taken (separate helper) would put JSC ahead at 10k requests
+(~29,200 vs ~8,700 req/s). Both are honest numbers, but only one can be the
+headline, and the inline shape is the one where V8 is not penalized by an
+inlining quirk.
+
+The persistent-handle cache added to `v8_rt.cc` (`v8::Persistent<v8::Function>`
+keyed by name, reset on `load`/`free`) removes the per-call `lookupGlobal`
+and name-string allocation; it is verifiably correct (real-backend tests plus
+a reload-redefinition test) but does not move throughput — the lookup was
+never the bottleneck on this workload.
 
 Caveats: single-threaded in-process dispatch (no HTTP server, no network);
 `--repeat` reuses one isolate/context (steady-state, not cold start);
@@ -234,8 +281,11 @@ does not yet support Promise results, streaming responses, host HTTP listeners,
 or QuickJS webcore compatibility globals.
 
 The QuickJS wrapper currently configures a 16 MiB JavaScript heap limit and a
-512 KiB stack limit. These are engine limits, not process memory measurements;
-total RSS has not been measured, so a 5 MiB SSR process is not a current claim.
+512 KiB stack limit. These are engine limits, not process memory measurements.
+With the harness held to O(1) memory, the measured process peak RSS for the
+100k-request SSR run is ~7.5 MB (flat from 1k to 100k), so QuickJS now sits
+near a small-process budget rather than the ~42 MB the old queueing harness
+reported.
 
 ### Next tasks
 

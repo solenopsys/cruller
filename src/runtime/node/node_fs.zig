@@ -443,10 +443,10 @@ pub const Async = struct {
 };
 
 pub const AsyncCpTask = NewAsyncCpTask(false);
-// bzrt-cut: ShellAsyncCpTask = NewAsyncCpTask(true) (shell вырезан)
+// bzrt-cut: ShellAsyncCpTask = NewAsyncCpTask(true) (shell removed)
 
 pub fn NewAsyncCpTask(comptime is_shell: bool) type {
-    // bzrt: shell вырезан — тип ленивый, реально инстанцируется только is_shell=false
+    // bzrt: shell removed — the type is lazy, only is_shell=false is actually instantiated
     const ShellTask = if (is_shell) bun.shell.Interpreter.Builtin.Cp.ShellCpTask else u0;
     const ShellTaskT = if (is_shell) *ShellTask else u0;
     return struct {
@@ -5869,7 +5869,7 @@ pub const NodeFS = struct {
 
     pub fn stat(this: *NodeFS, args: Arguments.Stat, _: Flavor) Maybe(Return.Stat) {
         const path = args.path.sliceZ(&this.sync_error_buf);
-        // bzrt-cut: StandaloneModuleGraph.stat (standalone-bundle вырезан)
+        // bzrt-cut: StandaloneModuleGraph.stat (standalone-bundle removed)
 
         if (Environment.isLinux and Syscall.supports_statx_on_linux.load(.monotonic)) {
             return switch (Syscall.statx(path, &.{ .type, .mode, .nlink, .uid, .gid, .atime, .mtime, .ctime, .btime, .ino, .size, .blocks })) {

@@ -1,9 +1,9 @@
 #!/bin/bash
-# Прогон ОДНОГО И ТОГО ЖЕ SSR-бандла на 3 движках + сравнение + сводная таблица.
-# ОДИН бинарь ssr-run, движок — рантайм-флаг --engine (не пересборка!).
-# Векторов 5: /, /about, /nope, bad-json, /calc (детерминированный CPU).
-# stdout бинарей -> out-<engine>.json (для cmp), диагностика -> stderr.
-# Использование: run_all_ssr.sh [bundle.js] [repeat]
+# Run the SAME SSR bundle on 3 engines + compare + summary table.
+# ONE ssr-run binary, engine is a runtime flag --engine (no rebuild!).
+# 5 vectors: /, /about, /nope, bad-json, /calc (deterministic CPU).
+# Binary stdout -> out-<engine>.json (for cmp), diagnostics -> stderr.
+# Usage: run_all_ssr.sh [bundle.js] [repeat]
 set -u
 RT=/home/alexstorm/distrib/business/converged/core/native/wrappers/rt
 CR=$RT/cruller
@@ -12,7 +12,7 @@ REPEAT=${2:-1}
 BIN=$CR/zig-out/bin/ssr-run
 JSC_CHECK=$CR/ssr-run/jsc_ssr_check.js
 
-[ -x "$BIN" ] || { echo "собери сначала: (cd $CR && zig build ssr-install)"; exit 1; }
+[ -x "$BIN" ] || { echo "build first: (cd $CR && zig build ssr-install)"; exit 1; }
 
 echo "=== bundle: $BUNDLE ($(wc -c < "$BUNDLE") bytes), repeat: $REPEAT (vectors: 5, total: $((5 * REPEAT))) ==="
 
@@ -40,8 +40,8 @@ else
   echo "DIFFER:"; diff /tmp/out-qjs.json /tmp/out-v8.json | head -n 10
 fi
 echo "--- diff quickjs vs jsc (responses only) ---"
-# Нормализация: у jsc_json та же форма [{request_id,ok,response}], но без
-# гарантии порядка ключей внутри response — сравниваем через python по полям.
+# Normalization: jsc_json has the same shape [{request_id,ok,response}], but
+# key order inside response is not guaranteed — compare via python by fields.
 python3 - <<'EOF'
 import json
 ok = True

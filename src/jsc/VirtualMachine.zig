@@ -53,7 +53,7 @@ cpu_profiler_config: ?CPUProfilerConfig = null,
 heap_profiler_config: ?HeapProfilerConfig = null,
 counters: Counters = .{},
 
-// bzrt: cli вырезан, но enum HotReload жив в options_types/Context.zig
+// bzrt: cli removed, but enum HotReload is alive in options_types/Context.zig
 hot_reload: @import("../options_types/Context.zig").HotReload = .none,
 jsc_vm: *VM = undefined,
 
@@ -746,7 +746,7 @@ pub fn defaultOnUnhandledRejection(this: *jsc.VirtualMachine, _: *JSGlobalObject
     this.runErrorHandler(value, this.onUnhandledRejectionExceptionList);
 }
 
-// bzrt: package manager вырезан
+// bzrt: package manager removed
 
 
 pub fn garbageCollect(this: *const VirtualMachine, sync: bool) usize {

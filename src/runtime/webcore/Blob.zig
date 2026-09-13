@@ -1655,7 +1655,7 @@ pub fn writeFileInternal(globalThis: *jsc.JSGlobalObject, path_or_blob_: *PathOr
             }
         }
 
-        // bzrt: Archive API вырезан
+        // bzrt: Archive API removed
 
         break :brk try Blob.get(
             globalThis,

@@ -93,7 +93,7 @@ fn findChrome(alloc: std.mem.Allocator, explicitPath: ?[*:0]const u8) !?[:0]cons
     if (explicitPath) |p| {
         return try alloc.dupeZ(u8, std.mem.span(p));
     }
-    // zig 0.16: std.process.getEnvVarOwned удалён → bun.getenvZ (без аллокации)
+    // zig 0.16: std.process.getEnvVarOwned removed → bun.getenvZ (no allocation)
     if (bun.getenvZ("BUN_CHROME_PATH")) |p| {
         return try alloc.dupeZ(u8, p);
     }
@@ -439,7 +439,7 @@ fn readDevToolsActivePort(out_buf: *std.ArrayListUnmanaged(u8)) ?void {
         if (port == 0 or ws_path.len == 0 or ws_path[0] != '/') continue;
 
         out_buf.clearRetainingCapacity();
-        // zig 0.16: ArrayListUnmanaged.writer(alloc) удалён → allocPrint + appendSlice
+        // zig 0.16: ArrayListUnmanaged.writer(alloc) removed → allocPrint + appendSlice
         const url_str = std.fmt.allocPrint(bun.default_allocator, "ws://127.0.0.1:{d}{s}", .{ port, ws_path }) catch return null;
         defer bun.default_allocator.free(url_str);
         out_buf.appendSlice(bun.default_allocator, url_str) catch return null;

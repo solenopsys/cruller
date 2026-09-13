@@ -1,5 +1,5 @@
-//! bzrt: отладочный дампер JSC-стеков вырезан (старые std.debug/std.io.tty
-//! API ушли в 0.16). C-экспорт сохранён — возвращает пустой трейс.
+//! bzrt: JSC stack debugging dumper removed (old std.debug/std.io.tty
+//! APIs gone in 0.16). C export preserved — returns an empty trace.
 pub export fn dumpBtjsTrace() [*:0]const u8 {
     return "";
 }

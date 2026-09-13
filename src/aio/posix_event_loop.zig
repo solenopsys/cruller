@@ -138,7 +138,7 @@ pub const FilePoll = struct {
     /// same as Darwin/OpenBSD (sys/event.h: `#define EV_EOF 0x8000`).
     const EV_EOF: u16 = if (@hasDecl(std.c.EV, "EOF")) std.c.EV.EOF else 0x8000;
 
-    // bzrt-cut: shell вырезан
+    // bzrt-cut: shell removed
     // const ShellBufferedWriter = bun.shell.Interpreter.IOWriter.Poll;
 
     const FileReader = jsc.WebCore.FileReader;
@@ -368,12 +368,12 @@ pub const FilePoll = struct {
             //     var loader = ptr.as(ShellSubprocessCapturedBufferedWriterMini);
             //     loader.onPoll(size_or_offset, 0);
             // },
-            // bzrt-cut: ShellBufferedWriter / ShellStaticPipeWriter (shell вырезан)
+            // bzrt-cut: ShellBufferedWriter / ShellStaticPipeWriter (shell removed)
             @field(Owner.Tag, @typeName(StaticPipeWriter)) => {
                 var handler: *StaticPipeWriter = ptr.as(StaticPipeWriter);
                 handler.onPoll(size_or_offset, poll.flags.contains(.hup));
             },
-            // bzrt-cut: SecurityScanStaticPipeWriter (security-scan вырезан)
+            // bzrt-cut: SecurityScanStaticPipeWriter (security-scan removed)
             @field(Owner.Tag, @typeName(FileSink)) => {
                 var handler: *FileSink = ptr.as(FileSink);
                 handler.onPoll(size_or_offset, poll.flags.contains(.hup));

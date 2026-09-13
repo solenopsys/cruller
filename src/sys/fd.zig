@@ -715,7 +715,7 @@ const uv_file = i32; // bzrt: linux-only
 const E = std.posix.E;
 const fd_t = std.posix.fd_t;
 
-// bzrt: std.os.getFdPath удалён в 0.16 — readlink /proc/self/fd/N
+// bzrt: std.os.getFdPath removed in 0.16 — readlink /proc/self/fd/N
 fn getFdPathViaProc(fd_native: anytype, buf: *[std.fs.max_path_bytes]u8) error{FileNotFound}![]u8 {
     var proc_buf: [64]u8 = undefined;
     const proc = std.fmt.bufPrintZ(&proc_buf, "/proc/self/fd/{d}", .{fd_native}) catch return error.FileNotFound;

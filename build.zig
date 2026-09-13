@@ -1,6 +1,6 @@
-//! bzrt: vanilla Zig 0.16 build.zig — заменяет Oven-patched оригинал.
-//! Интерфейс: `zig build obj` → bun-zig.o (для линковки с C++/JSC через Ninja).
-//! `zig build check` — полный семантический анализ (как build016.zig).
+//! bzrt: vanilla Zig 0.16 build.zig — replaces the Oven-patched original.
+//! Interface: `zig build obj` → bun-zig.o (for linking with C++/JSC via Ninja).
+//! `zig build check` — full semantic analysis (same as build016.zig).
 
 const std = @import("std");
 
@@ -146,7 +146,7 @@ pub fn build(b: *std.Build) void {
     translate_c.defineCMacroRaw("FREEBSD=0");
     translate_c.addIncludePath(b.path("vendor/zstd/lib"));
 
-    // --- модуль "bun" ---
+    // --- "bun" module ---
     const bun_module = b.createModule(.{
         .root_source_file = b.path("src/bun.zig"),
         .target = target,
@@ -187,7 +187,7 @@ pub fn build(b: *std.Build) void {
         bun_module.addImport(entry[0], mod);
     }
 
-    // --- корневой модуль для собранного бинарника (main.zig) ---
+    // --- root module for the built binary (main.zig) ---
     const root = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
@@ -197,7 +197,7 @@ pub fn build(b: *std.Build) void {
     });
     root.addImport("bun", bun_module);
 
-    // --- шаг "obj": объектник для линковки с C++ ---
+    // --- "obj" step: object file for linking with C++ ---
     const obj = b.addObject(.{
         .name = "bun-zig",
         .root_module = root,
@@ -228,7 +228,7 @@ pub fn build(b: *std.Build) void {
     obj.bundle_compiler_rt = true;
     obj.bundle_ubsan_rt = false;
 
-    const obj_step = b.step("obj", "Собрать bun-zig.o для линковки с C++/JSC");
+    const obj_step = b.step("obj", "Build bun-zig.o for linking with C++/JSC");
     obj_step.dependOn(&obj.step);
     const output = switch (obj_format) {
         .obj => obj.getEmittedBin(),
@@ -236,7 +236,7 @@ pub fn build(b: *std.Build) void {
     };
     obj_step.dependOn(&b.addInstallFile(output, "bun-zig.o").step);
 
-    // --- шаг "check": полный семантический анализ ---
+    // --- "check" step: full semantic analysis ---
     const check_root = b.createModule(.{
         .root_source_file = b.path("check_root.zig"),
         .target = target,
@@ -249,7 +249,7 @@ pub fn build(b: *std.Build) void {
         .name = "bzrt-check",
         .root_module = check_root,
     });
-    const check_step = b.step("check", "Семантический анализ урезанного дерева");
+    const check_step = b.step("check", "Semantic analysis of the trimmed tree");
     check_step.dependOn(&check_obj.step);
 
     const rt_test_root = b.createModule(.{
@@ -289,36 +289,36 @@ pub fn build(b: *std.Build) void {
     linkV8ForTest(b, v8_tests, target, optimize);
     const run_v8_tests = b.addRunArtifact(v8_tests);
 
-    const rt_test_step = b.step("rt-test", "Проверить прямые транспорты runtime boundary");
+    const rt_test_step = b.step("rt-test", "Test the direct transports of the runtime boundary");
     rt_test_step.dependOn(&run_rt_tests.step);
     rt_test_step.dependOn(&run_qjs_tests.step);
     rt_test_step.dependOn(&run_v8_tests.step);
 
-    // --- шаг "ssr-run": ОДИН бинарь — один и тот же SSR-бандл, движок
-    // выбирается в рантайме флагом `--engine=quickjs|v8`.
-    // (Отдельные бинари на движок убраны: переключаться надо флагом,
-    // а не пересборкой. jsc гоняется тем же бандлом через bun — см.
-    // ssr-run/jsc_ssr_check.js, монолит bun в zig-бинарь не линкуется.)
+    // --- "ssr-run" step: ONE binary — the same SSR bundle, engine
+    // selected at runtime via the `--engine=quickjs|v8` flag.
+    // (Per-engine binaries removed: switch via a flag,
+    // not by rebuilding. jsc is run with the same bundle via bun — see
+    // ssr-run/jsc_ssr_check.js; the bun monolith is not linked into the zig binary.)
     const ssr_root = b.createModule(.{
         .root_source_file = b.path("src/rt/ssr_run.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,
     });
-    // БЕЗ bun и БЕЗ build_options: движок — рантайм-флаг, бандл — argv.
-    // ssr_run.zig импортирует только contract + оба engine (чистый std).
+    // WITHOUT bun and WITHOUT build_options: engine is a runtime flag, bundle is argv.
+    // ssr_run.zig imports only contract + both engines (pure std).
     const ssr_exe = b.addExecutable(.{
         .name = "ssr-run",
         .root_module = ssr_root,
     });
-    // qjs линкуется динамически (.so рядом), v8 — статически (шим + монолит).
+    // qjs is linked dynamically (.so alongside), v8 statically (shim + monolith).
     const ssr_qjs_lib_dir = linkQjsForTest(b, ssr_exe, target, optimize);
     linkV8ForTest(b, ssr_exe, target, optimize);
     const run_ssr = b.addRunArtifact(ssr_exe);
     run_ssr.setEnvironmentVariable("LD_LIBRARY_PATH", b.pathFromRoot(ssr_qjs_lib_dir));
     if (b.args) |args| run_ssr.addArgs(args);
-    const ssr_step = b.step("ssr-run", "Прогнать SSR-бандл: --engine quickjs|v8 --bundle <bundle.js>");
+    const ssr_step = b.step("ssr-run", "Run the SSR bundle: --engine quickjs|v8 --bundle <bundle.js>");
     ssr_step.dependOn(&run_ssr.step);
-    const ssr_install = b.step("ssr-install", "Собрать ssr-run бинарь (оба движка внутри)");
+    const ssr_install = b.step("ssr-install", "Build the ssr-run binary (both engines inside)");
     ssr_install.dependOn(&b.addInstallArtifact(ssr_exe, .{}).step);
 }

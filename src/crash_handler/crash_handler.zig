@@ -319,7 +319,7 @@ pub fn crashHandler(
                     }
                     const desired_begin_addr = begin_addr orelse @returnAddress();
                     // zig 0.16: captureStackTrace(begin, *StackTrace) → captureCurrentStackTrace(opts, buf) → debug.StackTrace
-                    // конвертируем в builtin.StackTrace (тип error_return_trace, ABI паник-хендлера)
+                    // convert to builtin.StackTrace (type error_return_trace, panic handler ABI)
                     const captured = std.debug.captureCurrentStackTrace(.{ .first_address = desired_begin_addr }, &addr_buf);
                     trace_buf = .{ .index = captured.return_addresses.len, .instruction_addresses = &addr_buf };
 

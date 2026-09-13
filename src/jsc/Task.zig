@@ -5,10 +5,10 @@ pub const Task = TaggedPointerUnion(.{
     Access,
     AnyTask,
     AppendFile,
-    // bzrt-cut: Archive*Task (libarchive вырезан)
+    // bzrt-cut: Archive*Task (libarchive removed)
     AsyncGlobWalkTask,
     AsyncImageTask,
-    // bzrt-cut: bundle_v2.DeferredBatchTask, shell.*.YesTask (bundler/shell вырезаны)
+    // bzrt-cut: bundle_v2.DeferredBatchTask, shell.*.YesTask (bundler/shell removed)
     Chmod,
     Chown,
     Close,
@@ -37,7 +37,7 @@ pub const Task = TaggedPointerUnion(.{
     ManagedTask,
     Mkdir,
     Mkdtemp,
-    // bzrt-cut: napi_async_work, NapiFinalizerTask (napi вырезан)
+    // bzrt-cut: napi_async_work, NapiFinalizerTask (napi removed)
     NativePromiseContextDeferredDerefTask,
     NativeBrotli,
     NativeZlib,
@@ -63,12 +63,12 @@ pub const Task = TaggedPointerUnion(.{
     S3HttpDownloadStreamingTask,
     S3HttpSimpleTask,
     ServerAllConnectionsClosedTask,
-    // bzrt-cut: Shell*Task (shell вырезан)
+    // bzrt-cut: Shell*Task (shell removed)
     Stat,
     StatFS,
     StreamPending,
     Symlink,
-    // bzrt-cut: ThreadSafeFunction (napi вырезан)
+    // bzrt-cut: ThreadSafeFunction (napi removed)
     TimeoutObject,
     Truncate,
     Unlink,
@@ -118,7 +118,7 @@ pub fn tickQueueWithCount(this: *EventLoop, virtual_machine: *VirtualMachine, co
         log("run {s}", .{@tagName(task.tag())});
         defer counter.* += 1;
         switch (task.tag()) {
-            // bzrt-cut: Archive*Task (libarchive вырезан), Shell*Task (shell вырезан)
+            // bzrt-cut: Archive*Task (libarchive removed), Shell*Task (shell removed)
             @field(Task.Tag, @typeName(FetchTasklet)) => {
                 var fetch_task: *Fetch.FetchTasklet = task.get(Fetch.FetchTasklet).?;
                 try fetch_task.onProgressUpdate();
@@ -146,7 +146,7 @@ pub fn tickQueueWithCount(this: *EventLoop, virtual_machine: *VirtualMachine, co
                 defer transform_task.deinit();
                 try transform_task.runFromJS();
             },
-            // bzrt-cut: napi_async_work, ThreadSafeFunction (napi вырезан)
+            // bzrt-cut: napi_async_work, ThreadSafeFunction (napi removed)
             @field(Task.Tag, @typeName(ReadFileTask)) => {
                 var transform_task: *ReadFileTask = task.get(ReadFileTask).?;
                 defer transform_task.deinit();
@@ -386,11 +386,11 @@ pub fn tickQueueWithCount(this: *EventLoop, virtual_machine: *VirtualMachine, co
                 var any: *ServerAllConnectionsClosedTask = task.get(ServerAllConnectionsClosedTask).?;
                 try any.runFromJSThread(virtual_machine);
             },
-            // bzrt-cut: bundle_v2.DeferredBatchTask (bundler вырезан)
+            // bzrt-cut: bundle_v2.DeferredBatchTask (bundler removed)
             @field(Task.Tag, @typeName(PosixSignalTask)) => {
                 PosixSignalTask.runFromJSThread(@intCast(task.asUintptr()), global);
             },
-            // bzrt-cut: NapiFinalizerTask (napi вырезан)
+            // bzrt-cut: NapiFinalizerTask (napi removed)
             @field(Task.Tag, @typeName(NativePromiseContextDeferredDerefTask)) => {
                 NativePromiseContextDeferredDerefTask.runFromJSThread(@intCast(task.asUintptr()));
             },
@@ -464,7 +464,7 @@ const S3 = bun.S3;
 const S3HttpDownloadStreamingTask = S3.S3HttpDownloadStreamingTask;
 const S3HttpSimpleTask = S3.S3HttpSimpleTask;
 
-// bzrt-cut: napi aliases (napi вырезан)
+// bzrt-cut: napi aliases (napi removed)
 
 const AsyncFS = bun.api.node.fs.Async;
 const Access = AsyncFS.access;
@@ -527,7 +527,7 @@ const AsyncImageTask = jsc.API.Image.AsyncImageTask;
 const NativePromiseContextDeferredDerefTask = jsc.API.NativePromiseContext.DeferredDerefTask;
 const AsyncGlobWalkTask = jsc.API.Glob.WalkTask.AsyncGlobWalkTask;
 
-// bzrt-cut: Archive*Task (libarchive вырезан)
+// bzrt-cut: Archive*Task (libarchive removed)
 
 const Timer = jsc.API.Timer;
 const ImmediateObject = Timer.ImmediateObject;

@@ -933,7 +933,7 @@ pub fn spawnSyncEventLoop(this: *RareData, vm: *jsc.VirtualMachine) *SpawnSyncEv
 const UUID = @import("./uuid.zig");
 const WebSocketDeflate = @import("../http_jsc/websocket_client/WebSocketDeflate.zig");
 const std = @import("std");
-const EditorContext = struct {}; // bzrt: cli/open вырезан
+const EditorContext = struct {}; // bzrt: cli/open removed
 const FSWatcher = @import("../runtime/node/node_fs_watcher.zig").FSWatcher;
 const ValkeyContext = @import("../runtime/valkey_jsc/valkey.zig").ValkeyContext;
 

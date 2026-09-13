@@ -2293,7 +2293,7 @@ pub fn sigaction(sig: u8, noalias act: ?*const Sigaction, noalias oact: ?*Sigact
         *const fn (c_int, noalias ?*const Sigaction, noalias ?*Sigaction) callconv(.c) c_int,
         .{ .name = "sigaction" },
     ) else std.c.sigaction;
-    // zig 0.16: std.c.sigaction первый параметр стал enum SIG (linux-only ветка)
+    // zig 0.16: std.c.sigaction first parameter is now an enum SIG (linux-only branch)
     _ = libc_sigaction(@enumFromInt(sig), act, oact);
 }
 
@@ -3216,7 +3216,7 @@ pub fn socketpairImpl(domain: socketpair_t, socktype: socketpair_t, protocol: so
     if (comptime Environment.isLinux) {
         while (true) {
             const nonblock_flag: socketpair_t = if (nonblocking_status == .nonblocking) linux.SOCK.NONBLOCK else 0;
-            // zig 0.16: linux.socketpair аргументы стали u32
+            // zig 0.16: linux.socketpair arguments are now u32
             const rc = std.os.linux.socketpair(@intCast(domain), @intCast(socktype | linux.SOCK.CLOEXEC | nonblock_flag), @intCast(protocol), &fds_i);
             if (Maybe([2]bun.FD).errnoSys(rc, .socketpair)) |err| {
                 if (err.getErrno() == .INTR) continue;

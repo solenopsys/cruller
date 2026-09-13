@@ -512,7 +512,7 @@ const ResolvedSource = bun.jsc.ResolvedSource;
 const VirtualMachine = bun.jsc.VirtualMachine;
 const ZigString = bun.jsc.ZigString;
 
-// bzrt: npm-on-import вырезан — заглушки типов
+// bzrt: npm-on-import removed — type stubs
 const Install = struct {
     pub const Resolution = struct {};
     pub const DependencyID = u32;

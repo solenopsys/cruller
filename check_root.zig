@@ -1,5 +1,5 @@
-//! bzrt: корень type-check — тянет все top-level decl'ы модуля "bun",
-//! чтобы компилятор загрузил и проанализировал keep-дерево вширь.
+//! bzrt: type-check root — pulls all top-level decls of the "bun" module,
+//! so the compiler loads and semantically analyzes the keep-tree breadth-wise.
 const std = @import("std");
 
 comptime {

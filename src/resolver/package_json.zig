@@ -2183,13 +2183,13 @@ const Semver = bun.Semver;
 const String = Semver.String;
 const Version = Semver.Version;
 
-// bzrt: npm-метаданные вырезаны — заглушки
+// bzrt: npm metadata removed — stubs
 const Dependency = struct {};
 const Architecture = enum { all };
 
-const OperatingSystem = enum { all }; // bzrt: npm-метаданные вырезаны
+const OperatingSystem = enum { all }; // bzrt: npm metadata removed
 
-const Install = struct { // bzrt: npm вырезан
+const Install = struct { // bzrt: npm removed
     pub const PackageID = u32;
     pub const invalid_package_id: u32 = std.math.maxInt(u32);
 };

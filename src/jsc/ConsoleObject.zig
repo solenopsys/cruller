@@ -169,7 +169,7 @@ fn messageWithTypeAndLevel_(
 
     var print_length = len;
     // Get console depth from CLI options or bunfig, fallback to default
-    const console_depth = DEFAULT_CONSOLE_LOG_DEPTH; // bzrt: CLI вырезан
+    const console_depth = DEFAULT_CONSOLE_LOG_DEPTH; // bzrt: CLI removed
 
     var print_options: FormatOptions = .{
         .enable_colors = enable_colors,
@@ -3692,7 +3692,7 @@ pub fn timeLog(
         .globalThis = global,
         .ordered_properties = false,
         .quote_strings = false,
-        .max_depth = DEFAULT_CONSOLE_LOG_DEPTH, // bzrt: CLI вырезан
+        .max_depth = DEFAULT_CONSOLE_LOG_DEPTH, // bzrt: CLI removed
         .stack_check = bun.StackCheck.init(),
         .can_throw_stack_overflow = true,
     };
@@ -3798,7 +3798,7 @@ const string = []const u8;
 
 const std = @import("std");
 // bzrt-cut: const CLI = @import("../cli/cli.zig").Command;
-const JestPrettyFormat = struct { // bzrt: test_runner вырезан
+const JestPrettyFormat = struct { // bzrt: test_runner removed
     pub inline fn printAsymmetricMatcher(_: anytype, _: anytype, _: anytype, _: anytype, _: anytype, _: anytype, _: anytype) !bool {
         return false;
     }

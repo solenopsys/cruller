@@ -53,6 +53,10 @@ networking, resource control, and embeddability.
 
 These are roadmap items, not claims of currently shipped functionality.
 
+Execution strategy (wrap JSC in a bare wrapper, grow the host one command at
+a time, gate every step on all three engines): `STRATEGY.md`. Remaining
+engine work: `TODO.md`.
+
 ## Status
 
 The existing JSC `ReleaseFast` monolith is in production and can execute and
@@ -60,7 +64,8 @@ serve prepared application artifacts. The new engine-neutral boundary is an
 active migration inside that monolith. QuickJS proves that the minimal engine
 interface can execute source buffers, but it is not yet an SSR/server runtime.
 Engine selection is currently a compile-time choice, not a command-line or
-runtime parameter.
+runtime parameter. Boundary capability detail: `TODO.md`; planned next
+milestone: `STRATEGY.md` §3.
 
 ## Measurements
 

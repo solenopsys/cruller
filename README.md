@@ -77,6 +77,51 @@ difference, so this establishes JS-engine performance parity rather than a
 reliable 2% speedup. JavaScriptCore itself is retained, so this result is
 expected; HTTP throughput and tail latency require separate benchmarks.
 
+### Three-engine SSR + compute benchmark
+
+One Preact SSR bundle (`../ssr-preact/dist/bundle.js`, 18,373 bytes: SSR pages
+`/` `/about` + deterministic CPU endpoint `/calc`) runs unmodified on all
+three engines through the same `__crullerHandle` convention:
+
+- `zig build ssr-install` → one `zig-out/bin/ssr-run` binary;
+  engine is a runtime flag, not a rebuild:
+  `ssr-run --engine quickjs|v8 --bundle <bundle.js>`;
+- JSC runs the same bundle via `bun ssr-run/jsc_ssr_check.js`;
+- `ssr-run/run_all_ssr.sh [bundle] [repeat]` drives all three, compares
+  responses byte-for-byte, and prints a `BENCH engine=...` summary per engine.
+
+Workload: 5 vectors per round (`/`, `/about`, `/nope` → SSR HTML;
+bad-JSON → 400; `/calc` → 100k-iteration integer hash chain with an exact
+expected checksum `result=502474356`, so engine divergence is a mismatch,
+not noise). One process = one engine; metric is wall time for `engine.run()`
+over all queued requests + process peak RSS (`getrusage RU_MAXRSS`).
+
+Measured on the dev host (x86_64 Linux, 10,000 requests = 2000 rounds × 5
+vectors, zero mismatches on all engines, stable across reruns):
+
+| Engine | 10k req wall time | Throughput | Peak RSS | Binary |
+| --- | --- | --- | --- | --- |
+| QuickJS | ~15.0 s | ~665 req/s | ~11.3 MB | `ssr-run` + `libqjs.so` (~3.9 MB exe) |
+| V8 | ~1.15 s | ~8,700 req/s | ~37.0 MB | `ssr-run` static (~48 MB, monolith inside) |
+| JSC (bun 1.4.0) | ~0.34 s | ~29,500 req/s | ~60.6 MB | full bun runtime |
+
+At 1,000 requests the picture is the same (QuickJS ~640 req/s / 7.9 MB;
+V8 ~17,600 req/s / 32.4 MB; JSC ~26,700 req/s / 43.7 MB) — QuickJS RSS grows
+slowly with request count, V8/JSC are JIT-warmup-dominated at small N.
+
+Reading guide: QuickJS is ~13× slower than V8 and ~44× slower than JSC on
+this mixed SSR+integer-hash workload — expected for an interpreter vs JITs.
+V8 pays ~3× the RSS of QuickJS; JSC-as-bun pays ~5× (full runtime, not a
+minimal embed). For SSR ответы всех трёх движков байт-в-байт идентичны
+(`cmp` clean on every run), включая `/calc` checksum.
+
+Caveats: single-threaded in-process dispatch (no HTTP server, no network);
+`--repeat` reuses one isolate/context (steady-state, not cold start);
+QuickJS runs with its 16 MiB heap / 512 KiB stack / 100 ms budget, V8/JSC
+with defaults; JSC numbers include the whole bun process, not just the VM.
+Tail latency, cold start, and leak behavior are not measured yet (roadmap
+items 6 and 10).
+
 ## What was cut
 
 - Package manager (`bun install`, lockfile, npm registry client, lifecycle scripts)

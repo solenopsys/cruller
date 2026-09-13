@@ -199,6 +199,7 @@ const vectors = [_][]const u8{
     "{\"method\":\"GET\",\"path\":\"/about\",\"headers\":[],\"body\":\"\"}",
     "{\"method\":\"GET\",\"path\":\"/nope\",\"headers\":[],\"body\":\"\"}",
     "{oops",
+    "{\"method\":\"GET\",\"path\":\"/calc\",\"headers\":[],\"body\":\"\"}",
 };
 
 pub fn main(init: std.process.Init) !void {
@@ -302,7 +303,9 @@ pub fn main(init: std.process.Init) !void {
     }
     try to_engine.transport().send(contract.Command.init(.shutdown, .none));
 
+    const started_ns = monotonicNs();
     try engine.run();
+    const elapsed_ns = monotonicNs() - started_ns;
 
     // Собираем ответы: engine_started, total x server_response_end, engine_stopped.
     const started = to_host.transport().receive() orelse return error.NoStarted;
@@ -356,8 +359,18 @@ pub fn main(init: std.process.Init) !void {
     }
 
     const rss_kb = peakRssKb();
+    // Сводная строка для README-таблицы: движок, число ответов, wall-time,
+    // req/s, peak RSS, число несовпадений. Парсится bench_all.sh по префиксу.
+    const elapsed_ms: f64 = @as(f64, @floatFromInt(elapsed_ns)) / 1_000_000.0;
+    const rps: f64 = if (elapsed_ns > 0)
+        @as(f64, @floatFromInt(responses)) * 1_000_000_000.0 / @as(f64, @floatFromInt(elapsed_ns))
+    else
+        0;
     std.debug.print("{s}: {d} responses, {d} failed, peak RSS {d} kB\n", .{
         @tagName(engine_kind), responses, failed, rss_kb,
+    });
+    std.debug.print("BENCH engine={s} responses={d} failed={d} elapsed_ms={d:.1} rps={d:.0} peak_rss_kb={d}\n", .{
+        @tagName(engine_kind), responses, failed, elapsed_ms, rps, rss_kb,
     });
 
     engine.destroy();
@@ -369,6 +382,9 @@ pub fn main(init: std.process.Init) !void {
 /// 1:/about -> 200 + <title>About</title> + Rendered on /about
 /// 2:/nope -> 200 + Home (фолбэк) + Rendered on /nope
 /// 3:bad-json -> 400 + bad request
+/// 4:/calc -> 200 + точный детерминированный результат
+///   (result=502474356, iterations=100000). Строгое равенство подряд:
+///   расхождение движков = mismatch, а не шум.
 fn checkVector(index: usize, body: []const u8) bool {
     const has = struct {
         fn has(haystack: []const u8, needle: []const u8) bool {
@@ -380,6 +396,7 @@ fn checkVector(index: usize, body: []const u8) bool {
         1 => return has(body, "\"status\":200") and has(body, "<title>About</title>") and has(body, "Rendered on /about"),
         2 => return has(body, "\"status\":200") and has(body, "<title>Home</title>") and has(body, "Rendered on /nope"),
         3 => return has(body, "\"status\":400") and has(body, "bad request"),
+        4 => return has(body, "\"status\":200") and has(body, "\\\"result\\\":502474356") and has(body, "\\\"iterations\\\":100000"),
         else => return false,
     }
 }
@@ -388,4 +405,10 @@ fn peakRssKb() usize {
     // Linux: ru_maxrss в килобайтах.
     const usage = std.posix.getrusage(std.c.rusage.SELF);
     return @intCast(usage.maxrss);
+}
+
+fn monotonicNs() i128 {
+    var ts: std.c.timespec = undefined;
+    _ = std.c.clock_gettime(.MONOTONIC, &ts);
+    return @as(i128, ts.sec) * std.time.ns_per_s + ts.nsec;
 }

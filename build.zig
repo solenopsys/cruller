@@ -72,7 +72,7 @@ fn linkV8ForTest(b: *std.Build, compile: *std.Build.Step.Compile, target: std.Bu
     const shim_src = b.fmt("{s}/third-party/v8-shim.o", .{v8_wrapper_dir});
     const monolith_src = b.fmt("{s}/third-party/v8/libv8_monolith.a", .{v8_wrapper_dir});
     compile.root_module.addObjectFile(b.path(shim_src));
-    compile.root_module.addObjectFile(.{ .cwd_relative = b.pathFromRoot(monolith_src) });
+    compile.root_module.addObjectFile(.{ .cwd_relative = b.root.joinString(b.allocator, monolith_src) catch @panic("OOM") });
     // Shim + monolith were compiled against the system libstdc++ (regpacy
     // recipe: system clang++, not Zig's bundled libc++ which mangles
     // std::__1::*). Zig has no direct "link this exact .so" API, so pass
@@ -88,7 +88,7 @@ fn linkV8ForTest(b: *std.Build, compile: *std.Build.Step.Compile, target: std.Bu
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
-    const optimize = b.option(std.builtin.OptimizeMode, "optimize", "Prioritize performance, safety, or binary size") orelse .ReleaseFast;
+    const optimize = b.option(std.builtin.OptimizeMode, "optimize", "Prioritize performance, safety, or binary size") orelse .fast;
 
     // Keep this option surface compatible with scripts/build/zig.ts. The
     // native build invokes `zig build obj` with these values for every profile.
@@ -110,17 +110,17 @@ pub fn build(b: *std.Build) void {
     const llvm_codegen_threads = b.option(u32, "llvm_codegen_threads", "LLVM codegen threads") orelse 0;
     const obj_format = b.option(ObjectFormat, "obj_format", "Object output format") orelse .obj;
     const override_no_export_cpp_apis = b.option(bool, "override-no-export-cpp-apis", "Override C++ API exports") orelse false;
-    const codegen_path_abs = if (std.fs.path.isAbsolute(codegen_path)) codegen_path else b.pathFromRoot(codegen_path);
+    const codegen_path_abs = if (std.fs.path.isAbsolute(codegen_path)) codegen_path else b.root.joinString(b.allocator, codegen_path) catch @panic("OOM");
 
     // --- build_options ---
     const opts = b.addOptions();
-    opts.addOption([]const u8, "base_path", b.pathFromRoot("."));
+    opts.addOption([]const u8, "base_path", b.root.joinString(b.allocator, ".") catch @panic("OOM"));
     opts.addOption([]const u8, "codegen_path", codegen_path_abs);
     opts.addOption(bool, "codegen_embed", codegen_embed);
     opts.addOption(u32, "canary_revision", canary_revision);
     opts.addOption(bool, "is_canary", canary_revision != 0);
     opts.addOption(std.SemanticVersion, "version", std.SemanticVersion.parse(version_text) catch @panic("invalid -Dversion"));
-    opts.addOption([:0]const u8, "sha", b.allocator.dupeZ(u8, sha) catch @panic("OOM"));
+    opts.addOption([:0]const u8, "sha", b.allocator.dupeSentinel(u8, sha, 0) catch @panic("OOM"));
     opts.addOption(bool, "baseline", baseline);
     opts.addOption(bool, "enable_logs", enable_logs);
     opts.addOption(bool, "enable_asan", enable_asan);
@@ -275,7 +275,7 @@ pub fn build(b: *std.Build) void {
     });
     const qjs_lib_dir = linkQjsForTest(b, qjs_tests, target, optimize);
     const run_qjs_tests = b.addRunArtifact(qjs_tests);
-    run_qjs_tests.setEnvironmentVariable("LD_LIBRARY_PATH", b.pathFromRoot(qjs_lib_dir));
+    run_qjs_tests.setEnvironmentVariable("LD_LIBRARY_PATH", b.root.joinString(b.allocator, qjs_lib_dir) catch @panic("OOM"));
 
     const v8_tests = b.addTest(.{
         .name = "rt-v8-engine-tests",
@@ -315,8 +315,7 @@ pub fn build(b: *std.Build) void {
     const ssr_qjs_lib_dir = linkQjsForTest(b, ssr_exe, target, optimize);
     linkV8ForTest(b, ssr_exe, target, optimize);
     const run_ssr = b.addRunArtifact(ssr_exe);
-    run_ssr.setEnvironmentVariable("LD_LIBRARY_PATH", b.pathFromRoot(ssr_qjs_lib_dir));
-    if (b.args) |args| run_ssr.addArgs(args);
+    run_ssr.setEnvironmentVariable("LD_LIBRARY_PATH", b.root.joinString(b.allocator, ssr_qjs_lib_dir) catch @panic("OOM"));
     const ssr_step = b.step("ssr-run", "Run the SSR bundle: --engine quickjs|v8 --bundle <bundle.js>");
     ssr_step.dependOn(&run_ssr.step);
     const ssr_install = b.step("ssr-install", "Build the ssr-run binary (both engines inside)");
